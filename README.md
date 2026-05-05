@@ -62,7 +62,7 @@ Wielding two Swords or two Axes enables the **Double Strike** mechanic.
 
 ---
 
-## 📥 Installation
+##  Installation
 1.  Download the latest `.jar` file.
 2.  Place it in your server's `/plugins/` folder.
 3.  (Optional) Install **Floodgate** to enable Bedrock-specific balancing.
@@ -71,5 +71,5 @@ Wielding two Swords or two Axes enables the **Double Strike** mechanic.
 
 ---
 
-## 👨‍💻 Author
+##  Author
 Developed by **Dams/st4r/star, whatever is easier and you recognize me with lmao :>**. 
