@@ -6,6 +6,7 @@ import org.bukkit.Sound;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Arrow;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -229,30 +230,30 @@ public class DCM extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.LOW)
     public void onDualWieldMelee(EntityDamageByEntityEvent event) {
         if (!(event.getDamager() instanceof Player attacker)) return;
-        if (!(event.getEntity() instanceof Player victim)) return;
- 
+        if (!(event.getEntity() instanceof LivingEntity victim)) return;
+
         ItemStack mainHand = attacker.getInventory().getItemInMainHand();
         ItemStack offHand = attacker.getInventory().getItemInOffHand();
- 
+
         // Validate both hands have weapons
         if (mainHand.getType().isAir() || offHand.getType().isAir()) return;
- 
+
         // Exclude maces from dual wielding
         if (mainHand.getType() == Material.MACE || offHand.getType() == Material.MACE) return;
- 
+
         boolean isDualSwords = mainHand.getType().name().endsWith("_SWORD") && offHand.getType().name().endsWith("_SWORD");
         boolean isDualAxes = mainHand.getType().name().endsWith("_AXE") && offHand.getType().name().endsWith("_AXE");
- 
+
         if (!isDualSwords && !isDualAxes) return;
- 
+
         UUID attackerId = attacker.getUniqueId();
         UUID victimId = victim.getUniqueId();
         long currentTime = System.currentTimeMillis();
- 
+
         // ===========================
-        // SHIELD BREAKING (DUAL SWORDS ONLY)
+        // SHIELD BREAKING (DUAL SWORDS, PLAYER TARGETS ONLY)
         // ===========================
-        if (isDualSwords) {
+        if (isDualSwords && victim instanceof Player playerVictim) {
             // Reset streak if target changes or too much time has passed since last shield hit
             UUID lastTarget = lastTargets.get(attackerId);
             if (lastTarget == null || !lastTarget.equals(victimId)) {
@@ -265,11 +266,11 @@ public class DCM extends JavaPlugin implements Listener {
                 }
             }
 
-            if (victim.isBlocking()) {
+            if (playerVictim.isBlocking()) {
                 int streak = shieldHitStreak.getOrDefault(attackerId, 0) + 1;
                 shieldHitStreak.put(attackerId, streak);
                 shieldStreakTimestamps.put(attackerId, currentTime);
- 
+
                 if (streak >= SHIELD_BREAK_THRESHOLD) {
                     breakShield(victimId, SHIELD_BREAK_DURATION_MS);
                     shieldHitStreak.put(attackerId, 0);
