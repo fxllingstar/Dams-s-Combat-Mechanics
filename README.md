@@ -13,7 +13,7 @@ DCM is built with cross-platform play in mind, featuring native support for Bedr
     * **Effect**: Grants a velocity boost and **0.3s of invulnerability**.
     * **Cost**: Consumes 5 Saturation points or 2 Hunger bars.
     * **Cooldown**: 5 seconds.
-    * **Toggle**: Use `/dcm dash` to enable or disable this for yourself.
+    * **Toggle**: Use `/dash` to enable or disable this for yourself.
 
 ###  Defensive Maneuvers
 * **Sword Parry**: Swing your sword just before being hit to negate incoming damage.
