@@ -70,6 +70,9 @@ Wielding two Swords or two Axes enables the **Double Strike** mechanic.
 5.  For bedrock, I will have seperate files later, labelled "Bedrock"
 
 ---
+## License
+This plugin is licensed under the APGL-v3 LICENSE, if you fork this repository and build your own version, you MUST follow the license file.
+---
 
 ##  Author
 Developed by **Dams/st4r/star, whatever is easier and you recognize me with lmao :>**. 
