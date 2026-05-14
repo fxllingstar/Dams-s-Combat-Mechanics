@@ -677,6 +677,19 @@ public class DCM extends JavaPlugin implements Listener {
  
             int cooldownTicks = (int) (durationMs / 50);
             player.setCooldown(Material.SHIELD, cooldownTicks);
+ 
+            // Force out of blocking state if they are currently holding the shield up
+            if (player.isBlocking()) {
+                ItemStack shield = player.getInventory().getItemInOffHand();
+                if (shield.getType() == Material.SHIELD) {
+                    player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
+                    getServer().getScheduler().runTaskLater(this, () -> {
+                        if (player.isOnline()) {
+                            player.getInventory().setItemInOffHand(shield);
+                        }
+                    }, 1L);
+                }
+            }
         }
     }
  
