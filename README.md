@@ -51,7 +51,7 @@ Wielding two Swords or two Axes enables the **Double Strike** mechanic.
 ## 🛠️ Commands
 | Command | Description |
 | :--- | :--- |
-| `/dcm dash` | Toggles your ability to use the Dash mechanic. |
+| `/dash` | Toggles your ability to use the Dash mechanic. |
 
 ---
 
@@ -69,6 +69,9 @@ Wielding two Swords or two Axes enables the **Double Strike** mechanic.
 4.  Restart your server.
 5.  For bedrock, I will have seperate files later, labelled "Bedrock"
 
+---
+## License
+This plugin is licensed under the APGL-v3 LICENSE, if you fork this repository and build your own version, you MUST follow the license file.
 ---
 
 ##  Author
