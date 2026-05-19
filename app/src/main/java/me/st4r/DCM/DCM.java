@@ -38,7 +38,7 @@ import java.util.UUID;
  * combo systems, and mobility enhancements.
  * 
  * @author st4r
- * @version 1.0
+ * @version 1.1
  */
 public class DCM extends JavaPlugin implements Listener {
  
@@ -49,7 +49,8 @@ public class DCM extends JavaPlugin implements Listener {
     private static final long DUAL_BOW_CHARGE_TIME_MS = 2000;
     private static final int SHIELD_BREAK_THRESHOLD = 4;
     private static final long SHIELD_BREAK_DURATION_MS = 5000;
-    private static final long SHIELD_STREAK_TIMEOUT_MS = 4000; // streak resets if no hit within 4 seconds
+    private static final long SHIELD_STREAK_TIMEOUT_MS = 4000;
+
  
     // ===========================
     // PARRY CONFIGURATION
@@ -91,6 +92,7 @@ public class DCM extends JavaPlugin implements Listener {
     private final Map<UUID, Integer> shieldHitStreak = new HashMap<>();
     private final Map<UUID, UUID> lastTargets = new HashMap<>();
     private final Map<UUID, Long> shieldStreakTimestamps = new HashMap<>();
+    private final Map<UUID, Long> lastExhaustionMsgTimes = new HashMap<>();
  
     // ===========================
     // PARRY & COMBAT STATE
@@ -157,7 +159,7 @@ public class DCM extends JavaPlugin implements Listener {
                 lastSwingTimes.entrySet().removeIf(entry -> entry.getValue() < staleTime);
                 lastBlockTimes.entrySet().removeIf(entry -> entry.getValue() < staleTime);
                 shieldStreakTimestamps.entrySet().removeIf(entry -> entry.getValue() < staleTime);
- 
+                lastExhaustionMsgTimes.entrySet().removeIf(entry -> entry.getValue() < staleTime);
                 // Clean up expired shield breaks
                 brokenShields.entrySet().removeIf(entry -> entry.getValue() < now);
                 
@@ -202,7 +204,8 @@ public class DCM extends JavaPlugin implements Listener {
         shieldHitStreak.remove(id);
         lastTargets.remove(id);
         shieldStreakTimestamps.remove(id);
-        
+        lastExhaustionMsgTimes.remove(id);
+
         // Parry cleanup
         lastSwingTimes.remove(id);
         lastBlockTimes.remove(id);
@@ -229,6 +232,8 @@ public class DCM extends JavaPlugin implements Listener {
  
     @EventHandler(priority = EventPriority.LOW)
     public void onDualWieldMelee(EntityDamageByEntityEvent event) {
+
+        if(event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK);
         if (!(event.getDamager() instanceof Player attacker)) return;
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
 
@@ -249,6 +254,23 @@ public class DCM extends JavaPlugin implements Listener {
         UUID attackerId = attacker.getUniqueId();
         UUID victimId = victim.getUniqueId();
         long currentTime = System.currentTimeMillis();
+
+       //=========================
+       // Dual Yield Cooldown Check
+       // ========================
+       if (meleeCooldowns.containsKey(attackerId)){
+        long timeLeft = meleeCooldowns.get(attackerId) - currentTime;
+        if (timeLeft > 0){
+            long lastMsgTime = lastExhaustionMsgTimes.getOrDefault(attackerId, 0L);
+            if (currentTime - lastMsgTime > 1000){
+                attacker.sendMessage(ChatColor.RED + "You are exhausted! Wait " + String.format("%.1f", timeLeft / 1000.0) + "s for double strike.");
+                lastExhaustionMsgTimes.put(attackerId, currentTime);
+            }
+            return;
+        }
+       }
+
+
 
         // ===========================
         // SHIELD BREAKING (DUAL SWORDS, PLAYER TARGETS ONLY)
@@ -283,17 +305,7 @@ public class DCM extends JavaPlugin implements Listener {
             }
         }
  
-        // ===========================
-        // DUAL STRIKE COOLDOWN CHECK
-        // ===========================
-        if (meleeCooldowns.containsKey(attackerId)) {
-            long timeLeft = meleeCooldowns.get(attackerId) - currentTime;
-            if (timeLeft > 0) {
-                attacker.sendMessage(ChatColor.RED + "You are exhausted! Wait " + String.format("%.1f", timeLeft / 1000.0) + "s for double strike.");
-                return;
-            }
-        }
- 
+
         // ===========================
         // CALCULATE OFF-HAND DAMAGE
         // ===========================
@@ -669,26 +681,28 @@ public class DCM extends JavaPlugin implements Listener {
     private void breakShield(UUID playerId, long durationMs) {
         long expireTime = System.currentTimeMillis() + durationMs;
         brokenShields.put(playerId, expireTime);
- 
+
         Player player = getServer().getPlayer(playerId);
         if (player != null) {
             player.getWorld().playSound(player.getLocation(), Sound.ITEM_SHIELD_BREAK, 1.0f, 0.8f);
             player.sendActionBar("§c§l🛡 SHIELD BROKEN! (" + String.format("%.1f", durationMs / 1000.0) + "s)");
- 
+
             int cooldownTicks = (int) (durationMs / 50);
             player.setCooldown(Material.SHIELD, cooldownTicks);
- 
-            // Force out of blocking state if they are currently holding the shield up
-            if (player.isBlocking()) {
-                ItemStack shield = player.getInventory().getItemInOffHand();
-                if (shield.getType() == Material.SHIELD) {
-                    player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
-                    getServer().getScheduler().runTaskLater(this, () -> {
-                        if (player.isOnline()) {
-                            player.getInventory().setItemInOffHand(shield);
-                        }
-                    }, 1L);
-                }
+
+            // Force out of blocking state by swapping items
+            ItemStack offHand = player.getInventory().getItemInOffHand();
+            if (offHand.getType() == Material.SHIELD) {
+                ItemStack mainHand = player.getInventory().getItemInMainHand();
+                player.getInventory().setItemInOffHand(mainHand);
+                player.getInventory().setItemInMainHand(offHand);
+
+                getServer().getScheduler().runTaskLater(this, () -> {
+                    if (player.isOnline()) {
+                        player.getInventory().setItemInOffHand(offHand);
+                        player.getInventory().setItemInMainHand(mainHand);
+                    }
+                }, 1L);
             }
         }
     }
