@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.yourname'
-version = '1.2-Bugfix'
+version = '1.2.1-FIX'
 
 repositories {
     mavenCentral()
