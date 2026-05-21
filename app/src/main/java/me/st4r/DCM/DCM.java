@@ -570,7 +570,6 @@ public class DCM extends JavaPlugin implements Listener {
                 axeCombos.put(attackerId, 0);
                 axeComboTimestamps.remove(attackerId);
             } else {
-                // Increment combo
                 combo++;
                 axeCombos.put(attackerId, combo);
                 axeComboTimestamps.put(attackerId, now);
@@ -586,7 +585,7 @@ public class DCM extends JavaPlugin implements Listener {
     @EventHandler
     public void onSneak(org.bukkit.event.player.PlayerToggleSneakEvent event) {
         if (!event.isSneaking()) return;
- 
+
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
  
