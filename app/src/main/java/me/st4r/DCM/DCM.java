@@ -47,6 +47,8 @@ public class DCM extends JavaPlugin implements Listener {
     private static final int SHIELD_BREAK_THRESHOLD = 4;
     private static final long SHIELD_BREAK_DURATION_MS = 5000;
     private static final long SHIELD_STREAK_TIMEOUT_MS = 4000;
+    private static final long MACE_GUARD_WINDOW_MS = 1500;
+    private static final double MACE_GUARD_DAMAGE_MULTIPLIER = 0.6;
 
  
     // ===========================
@@ -103,6 +105,7 @@ public class DCM extends JavaPlugin implements Listener {
     private final Map<UUID, Long> swordParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> shieldParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> brokenShields = new HashMap<>();
+    private final Map<UUID, Long> maceGuardTimes = new HashMap<>();
     private final Map<UUID, Long> riposteWindows = new HashMap<>();
  
     // ===========================
@@ -165,6 +168,7 @@ public class DCM extends JavaPlugin implements Listener {
                 riposteWindows.entrySet().removeIf(entry -> entry.getValue() < now);
                 // Clean up expired shield breaks
                 brokenShields.entrySet().removeIf(entry -> entry.getValue() < now);
+                maceGuardTimes.entrySet().removeIf(entry -> entry.getValue() < now);
                 
                 // Clean up expired invulnerability
                 invulnerablePlayers.entrySet().removeIf(entry -> entry.getValue() < now);
@@ -225,7 +229,7 @@ public class DCM extends JavaPlugin implements Listener {
         shieldParryCooldowns.remove(id);
         brokenShields.remove(id);
         riposteWindows.remove(id);
-        
+        maceGuardTimes.remove(id);
         // Axe combo cleanup
         axeCombos.remove(id);
         axeComboTimestamps.remove(id);
@@ -349,6 +353,7 @@ public class DCM extends JavaPlugin implements Listener {
  
     @EventHandler
     public void onBowDrawStart(PlayerInteractEvent event) {
+        if (event.isCancelled()) return;
         if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
  
         Player player = event.getPlayer();
@@ -428,6 +433,7 @@ public class DCM extends JavaPlugin implements Listener {
  
     @EventHandler
     public void onSwordGuardAttempt(PlayerInteractEvent event) {
+        if (event.isCancelled()) return;
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
 
@@ -440,6 +446,7 @@ public class DCM extends JavaPlugin implements Listener {
  
     @EventHandler
     public void onShieldRaise(PlayerInteractEvent event) {
+        if (event.isCancelled()) return;
         Player player = event.getPlayer();
         if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
  
@@ -463,9 +470,26 @@ public class DCM extends JavaPlugin implements Listener {
             lastBlockTimes.put(player.getUniqueId(), System.currentTimeMillis());
         }
     }
+
+    @EventHandler
+    public void onMaceGuardStart(PlayerInteractEvent event) {
+        if (event.isCancelled()) return;
+
+        Action action = event.getAction();
+        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
+
+        Player player = event.getPlayer();
+        Material mainHand = player.getInventory().getItemInMainHand().getType();
+        Material offHand = player.getInventory().getItemInOffHand().getType();
+
+        if (mainHand != Material.MACE && offHand != Material.MACE) return;
+
+        maceGuardTimes.put(player.getUniqueId(), System.currentTimeMillis() + MACE_GUARD_WINDOW_MS);
+    }
  
     @EventHandler(priority = EventPriority.HIGH)
     public void onCombatDamage(EntityDamageByEntityEvent event) {
+        if (event.isCancelled()) return;
         if (!(event.getEntity() instanceof Player victim)) return;
         if (!(event.getDamager() instanceof Player attacker)) return;
         if (event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.THORNS) return;
@@ -509,6 +533,23 @@ public class DCM extends JavaPlugin implements Listener {
  
         Material victimWeapon = victim.getInventory().getItemInMainHand().getType();
         Material attackerWeapon = attacker.getInventory().getItemInMainHand().getType();
+
+        // ===========================
+        // MACE SHIELD CRUSH
+        // ===========================
+        if (attackerWeapon == Material.MACE && victim.isBlocking() && !isShieldBroken(victim.getUniqueId())) {
+            breakShield(victim.getUniqueId(), SHIELD_BREAK_DURATION_MS);
+            attacker.sendActionBar("§6Heavy Crush! Shield shattered.");
+        }
+
+        // ===========================
+        // HEAVY GUARD DAMAGE REDUCTION
+        // ===========================
+        Long guardExpire = maceGuardTimes.get(victim.getUniqueId());
+        if (guardExpire != null && now <= guardExpire) {
+            event.setDamage(event.getDamage() * MACE_GUARD_DAMAGE_MULTIPLIER);
+            victim.setVelocity(new Vector(0, 0, 0));
+        }
  
         // ===========================
         // SWORD PARRY
@@ -674,15 +715,22 @@ public class DCM extends JavaPlugin implements Listener {
  
     @EventHandler(priority = EventPriority.HIGH)
     public void onAnyDamage(org.bukkit.event.entity.EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) return;
         if (event.isCancelled()) return;
+        if (!(event.getEntity() instanceof Player victim)) return;
+        if (event instanceof EntityDamageByEntityEvent) return;
+
+        Long guardExpire = maceGuardTimes.get(victim.getUniqueId());
+        long now = System.currentTimeMillis();
+        if (guardExpire != null && now <= guardExpire) {
+            event.setDamage(event.getDamage() * MACE_GUARD_DAMAGE_MULTIPLIER);
+            victim.setVelocity(new Vector(0, 0, 0));
+        }
  
         // Calculate post-damage health
         double finalHealth = victim.getHealth() - event.getFinalDamage();
  
         // Trigger adrenaline if dropping to/below threshold without dying
         if (finalHealth > 0 && finalHealth <= ADRENALINE_HEALTH_THRESHOLD) {
-            long now = System.currentTimeMillis();
             long cd = adrenalineCooldowns.getOrDefault(victim.getUniqueId(), 0L);
  
             if (now >= cd) {
