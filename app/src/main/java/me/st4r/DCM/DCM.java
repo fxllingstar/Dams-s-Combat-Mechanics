@@ -14,8 +14,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
-import org.bukkit.event.player.PlayerAnimationEvent;
-import org.bukkit.event.player.PlayerAnimationType;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -67,6 +65,7 @@ public class DCM extends JavaPlugin implements Listener {
     // ===========================
     private static final int AXE_COMBO_MAX = 4;
     private static final double AXE_SLAM_TRUE_DAMAGE = 6.0; // 3 hearts
+    private static final long AXE_COMBO_TIMEOUT_MS = 8000;
  
     // ===========================
     // DASH CONFIGURATION
@@ -107,6 +106,7 @@ public class DCM extends JavaPlugin implements Listener {
     // AXE COMBO STATE
     // ===========================
     private final Map<UUID, Integer> axeCombos = new HashMap<>();
+    private final Map<UUID, Long> axeComboTimestamps = new HashMap<>();
  
     // ===========================
     // DASH STATE
@@ -165,6 +165,15 @@ public class DCM extends JavaPlugin implements Listener {
                 
                 // Clean up expired invulnerability
                 invulnerablePlayers.entrySet().removeIf(entry -> entry.getValue() < now);
+
+                // Clean up stale axe combos
+                axeComboTimestamps.entrySet().removeIf(entry -> {
+                    if (now - entry.getValue() > AXE_COMBO_TIMEOUT_MS) {
+                        axeCombos.remove(entry.getKey());
+                        return true;
+                    }
+                    return false;
+                });
             }
         }.runTaskTimer(this, 1200L, 1200L); // Runs every 60 seconds
     }
@@ -215,6 +224,7 @@ public class DCM extends JavaPlugin implements Listener {
         
         // Axe combo cleanup
         axeCombos.remove(id);
+        axeComboTimestamps.remove(id);
         
         // Dash cleanup
         dashEnabled.remove(id);
@@ -414,10 +424,15 @@ public class DCM extends JavaPlugin implements Listener {
     // ===============================================
  
     @EventHandler
-    public void onSwing(PlayerAnimationEvent event) {
-        if (event.getAnimationType() == PlayerAnimationType.ARM_SWING) {
-            lastSwingTimes.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
-        }
+    public void onSwordGuardAttempt(PlayerInteractEvent event) {
+        Action action = event.getAction();
+        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
+
+        Player player = event.getPlayer();
+        Material mainHand = player.getInventory().getItemInMainHand().getType();
+        if (!mainHand.name().endsWith("_SWORD")) return;
+
+        lastSwingTimes.put(player.getUniqueId(), System.currentTimeMillis());
     }
  
     @EventHandler
@@ -533,7 +548,13 @@ public class DCM extends JavaPlugin implements Listener {
         // AXE COMBO SYSTEM
         // ===========================
         if (attackerWeapon.name().endsWith("_AXE") && event.isCritical()) {
-            int combo = axeCombos.getOrDefault(attacker.getUniqueId(), 0);
+            UUID attackerId = attacker.getUniqueId();
+            int combo = axeCombos.getOrDefault(attackerId, 0);
+            long lastComboHit = axeComboTimestamps.getOrDefault(attackerId, 0L);
+
+            if (combo > 0 && now - lastComboHit > AXE_COMBO_TIMEOUT_MS) {
+                combo = 0;
+            }
  
             if (combo >= 3) {
                 // 4th critical hit: Execute Slam
@@ -546,11 +567,13 @@ public class DCM extends JavaPlugin implements Listener {
                 } else {
                     attacker.sendActionBar("§7Slam Blocked!");
                 }
-                axeCombos.put(attacker.getUniqueId(), 0);
+                axeCombos.put(attackerId, 0);
+                axeComboTimestamps.remove(attackerId);
             } else {
                 // Increment combo
                 combo++;
-                axeCombos.put(attacker.getUniqueId(), combo);
+                axeCombos.put(attackerId, combo);
+                axeComboTimestamps.put(attackerId, now);
                 attacker.sendActionBar("§e⚔ Combo: §l" + combo + "/" + AXE_COMBO_MAX);
             }
         }
