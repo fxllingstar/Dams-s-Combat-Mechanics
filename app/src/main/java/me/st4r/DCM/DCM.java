@@ -26,7 +26,6 @@ import org.bukkit.util.Vector;
 import org.geysermc.floodgate.api.FloodgateApi;
  
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
  
@@ -59,6 +58,10 @@ public class DCM extends JavaPlugin implements Listener {
     private static final long SWORD_PARRY_COOLDOWN_MS = 10000;
     private static final long SHIELD_PARRY_COOLDOWN_MS = 30000;
     private static final int SHIELD_STUN_DURATION_TICKS = 100; // 5 seconds
+    private static final long RIPOSTE_WINDOW_MS = 1500;
+    private static final double RIPOSTE_DAMAGE_MULTIPLIER = 1.6;
+    private static final double RIPOSTE_KNOCKBACK_HORIZONTAL = 1.1;
+    private static final double RIPOSTE_KNOCKBACK_VERTICAL = 0.25;
  
     // ===========================
     // AXE COMBO CONFIGURATION
@@ -71,7 +74,6 @@ public class DCM extends JavaPlugin implements Listener {
     // DASH CONFIGURATION
     // ===========================
     private static final long DASH_COOLDOWN_MS = 5000;
-    private static final long DASH_WINDOW_MS = 1000;
     private static final long DASH_INVULN_DURATION_MS = 300;
     private static final double DASH_VELOCITY_MULTIPLIER = 1.5;
     private static final double DASH_VERTICAL_BOOST = 0.2;
@@ -101,6 +103,7 @@ public class DCM extends JavaPlugin implements Listener {
     private final Map<UUID, Long> swordParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> shieldParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> brokenShields = new HashMap<>();
+    private final Map<UUID, Long> riposteWindows = new HashMap<>();
  
     // ===========================
     // AXE COMBO STATE
@@ -112,7 +115,6 @@ public class DCM extends JavaPlugin implements Listener {
     // DASH STATE
     // ===========================
     private final Map<UUID, Boolean> dashEnabled = new HashMap<>();
-    private final Map<UUID, List<Long>> sneakTimestamps = new HashMap<>();
     private final Map<UUID, Long> dashCooldowns = new HashMap<>();
     private final Map<UUID, Long> invulnerablePlayers = new HashMap<>();
  
@@ -160,6 +162,7 @@ public class DCM extends JavaPlugin implements Listener {
                 lastBlockTimes.entrySet().removeIf(entry -> entry.getValue() < staleTime);
                 shieldStreakTimestamps.entrySet().removeIf(entry -> entry.getValue() < staleTime);
                 lastExhaustionMsgTimes.entrySet().removeIf(entry -> entry.getValue() < staleTime);
+                riposteWindows.entrySet().removeIf(entry -> entry.getValue() < now);
                 // Clean up expired shield breaks
                 brokenShields.entrySet().removeIf(entry -> entry.getValue() < now);
                 
@@ -221,6 +224,7 @@ public class DCM extends JavaPlugin implements Listener {
         swordParryCooldowns.remove(id);
         shieldParryCooldowns.remove(id);
         brokenShields.remove(id);
+        riposteWindows.remove(id);
         
         // Axe combo cleanup
         axeCombos.remove(id);
@@ -228,7 +232,6 @@ public class DCM extends JavaPlugin implements Listener {
         
         // Dash cleanup
         dashEnabled.remove(id);
-        sneakTimestamps.remove(id);
         dashCooldowns.remove(id);
         invulnerablePlayers.remove(id);
         
@@ -468,6 +471,22 @@ public class DCM extends JavaPlugin implements Listener {
         if (event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.THORNS) return;
  
         long now = System.currentTimeMillis();
+        UUID attackerId = attacker.getUniqueId();
+
+        Long riposteExpiry = riposteWindows.get(attackerId);
+        if (riposteExpiry != null) {
+            if (now < riposteExpiry) {
+                event.setDamage(event.getDamage() * RIPOSTE_DAMAGE_MULTIPLIER);
+                Vector knockback = victim.getLocation().toVector().subtract(attacker.getLocation().toVector());
+                if (knockback.lengthSquared() > 0.0001) {
+                    attacker.setVelocity(knockback.normalize().multiply(RIPOSTE_KNOCKBACK_HORIZONTAL).setY(RIPOSTE_KNOCKBACK_VERTICAL));
+                }
+                attacker.sendActionBar("§6⚔ RIPOSTE!");
+                riposteWindows.remove(attackerId);
+            } else {
+                riposteWindows.remove(attackerId);
+            }
+        }
  
         // ===========================
         // DASH INVULNERABILITY CHECK
@@ -517,11 +536,12 @@ public class DCM extends JavaPlugin implements Listener {
                         }
                     }.runTaskLater(this, 1L);
  
-                    victim.getWorld().playSound(victim.getLocation(), Sound.BLOCK_ANVIL_PLACE, 1.0f, 1.0f);
+                    CombatFX.playParryEffects(victim.getLocation(), parryWindow == SWORD_PARRY_WINDOW_BEDROCK_MS);
  
                     String platformPrefix = (parryWindow == SWORD_PARRY_WINDOW_BEDROCK_MS) ? "§b[Bedrock] " : "§e[Java] ";
                     victim.sendActionBar(platformPrefix + "§6⚔ Sword Parry!");
  
+                    riposteWindows.put(victim.getUniqueId(), now + RIPOSTE_WINDOW_MS);
                     swordParryCooldowns.put(victim.getUniqueId(), now + SWORD_PARRY_COOLDOWN_MS);
                 }
             }
@@ -548,7 +568,6 @@ public class DCM extends JavaPlugin implements Listener {
         // AXE COMBO SYSTEM
         // ===========================
         if (attackerWeapon.name().endsWith("_AXE") && event.isCritical()) {
-            UUID attackerId = attacker.getUniqueId();
             int combo = axeCombos.getOrDefault(attackerId, 0);
             long lastComboHit = axeComboTimestamps.getOrDefault(attackerId, 0L);
 
@@ -591,23 +610,12 @@ public class DCM extends JavaPlugin implements Listener {
         UUID id = player.getUniqueId();
  
         if (!dashEnabled.getOrDefault(id, true)) return;
- 
-        long now = System.currentTimeMillis();
-        List<Long> times = sneakTimestamps.computeIfAbsent(id, k -> new java.util.ArrayList<>());
- 
-        times.add(now);
-        if (times.size() > 3) times.remove(0);
- 
-        if (times.size() == 3) {
-            long firstShift = times.get(0);
-            if (now - firstShift <= DASH_WINDOW_MS) {
-                triggerDash(player);
-                times.clear();
-            }
-        }
+        if (!player.isSprinting()) return;
+
+        triggerDash(player, player.getVelocity());
     }
  
-    private void triggerDash(Player player) {
+    private void triggerDash(Player player, Vector movementVector) {
         long now = System.currentTimeMillis();
         UUID id = player.getUniqueId();
         long cd = dashCooldowns.getOrDefault(id, 0L);
@@ -644,7 +652,7 @@ public class DCM extends JavaPlugin implements Listener {
         // ===========================
         // MOVEMENT LOGIC
         // ===========================
-        Vector dashVec = player.getVelocity().setY(0);
+        Vector dashVec = movementVector.clone().setY(0);
         if (dashVec.length() < 0.1) {
             dashVec = player.getLocation().getDirection().setY(0).normalize();
         } else {
@@ -684,7 +692,7 @@ public class DCM extends JavaPlugin implements Listener {
                 victim.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, ADRENALINE_DURATION_TICKS, 1));
                 victim.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, ADRENALINE_DURATION_TICKS, 0));
  
-                victim.getWorld().playSound(victim.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 0.5f, 1.5f);
+                CombatFX.playAdrenalineEffects(victim);
                 victim.sendActionBar("§c§lADRENALINE RUSH!");
  
                 adrenalineCooldowns.put(victim.getUniqueId(), now + ADRENALINE_COOLDOWN_MS);
