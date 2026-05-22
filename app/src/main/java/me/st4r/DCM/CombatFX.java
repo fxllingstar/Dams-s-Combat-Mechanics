@@ -25,6 +25,28 @@ public final class CombatFX {
         world.playSound(location, Sound.BLOCK_ANVIL_PLACE, 1.0f, pitch);
     }
 
+    public static void playDashEffects(Player player) {
+        Location location = player.getLocation();
+        World world = location.getWorld();
+        if (world == null) {
+            return;
+        }
+
+        world.spawnParticle(Particle.CLOUD, location.clone().add(0.0, 0.5, 0.0), 12, 0.2, 0.15, 0.2, 0.05);
+        world.spawnParticle(Particle.CRIT, location.clone().add(0.0, 1.0, 0.0), 8, 0.3, 0.3, 0.3, 0.02);
+    }
+
+    public static void playRiposteEffects(Location location) {
+        World world = location.getWorld();
+        if (world == null) {
+            return;
+        }
+
+        world.spawnParticle(Particle.CRIT, location.clone().add(0.0, 1.0, 0.0), 24, 0.3, 0.4, 0.3, 0.06);
+        world.spawnParticle(Particle.SWEEP_ATTACK, location.clone().add(0.0, 1.0, 0.0), 3, 0.2, 0.2, 0.2, 0.0);
+        world.playSound(location, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.4f);
+    }
+
     public static void playAdrenalineEffects(Player player) {
         Location location = player.getLocation();
         World world = location.getWorld();

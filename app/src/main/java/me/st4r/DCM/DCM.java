@@ -141,7 +141,7 @@ public class DCM extends JavaPlugin implements Listener {
 
         getServer().getPluginManager().registerEvents(this, this);
         startMemoryCleanupTask();
-        getLogger().info("DCM (Dams's Combat Mechanics) v1.0 has been enabled!");
+        getLogger().info("DCM (Dams's Combat Mechanics) v2.0 has been enabled!");
         getLogger().info("Features: Dual Wielding, Parry System, Axe Combos, Dash, Adrenaline Rush");
     }
  
@@ -250,7 +250,7 @@ public class DCM extends JavaPlugin implements Listener {
     @EventHandler(priority = EventPriority.LOW)
     public void onDualWieldMelee(EntityDamageByEntityEvent event) {
 
-        if(event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK);
+        if (event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK) return;
         if (!(event.getDamager() instanceof Player attacker)) return;
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
 
@@ -503,9 +503,10 @@ public class DCM extends JavaPlugin implements Listener {
                 event.setDamage(event.getDamage() * RIPOSTE_DAMAGE_MULTIPLIER);
                 Vector knockback = victim.getLocation().toVector().subtract(attacker.getLocation().toVector());
                 if (knockback.lengthSquared() > 0.0001) {
-                    attacker.setVelocity(knockback.normalize().multiply(RIPOSTE_KNOCKBACK_HORIZONTAL).setY(RIPOSTE_KNOCKBACK_VERTICAL));
+                    victim.setVelocity(knockback.normalize().multiply(RIPOSTE_KNOCKBACK_HORIZONTAL).setY(RIPOSTE_KNOCKBACK_VERTICAL));
                 }
                 attacker.sendActionBar("§6⚔ RIPOSTE!");
+                CombatFX.playRiposteEffects(attacker.getLocation());
                 riposteWindows.remove(attackerId);
             } else {
                 riposteWindows.remove(attackerId);
@@ -582,6 +583,7 @@ public class DCM extends JavaPlugin implements Listener {
                     String platformPrefix = (parryWindow == SWORD_PARRY_WINDOW_BEDROCK_MS) ? "§b[Bedrock] " : "§e[Java] ";
                     victim.sendActionBar(platformPrefix + "§6⚔ Sword Parry!");
  
+                    lastSwingTimes.remove(victim.getUniqueId());
                     riposteWindows.put(victim.getUniqueId(), now + RIPOSTE_WINDOW_MS);
                     swordParryCooldowns.put(victim.getUniqueId(), now + SWORD_PARRY_COOLDOWN_MS);
                 }
@@ -700,6 +702,7 @@ public class DCM extends JavaPlugin implements Listener {
         }
  
         player.setVelocity(dashVec.multiply(DASH_VELOCITY_MULTIPLIER).setY(DASH_VERTICAL_BOOST));
+        CombatFX.playDashEffects(player);
         player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ENDER_DRAGON_FLAP, 1.0f, 1.5f);
         player.sendActionBar("§b DASH! (§6-Energy§b)");
  
