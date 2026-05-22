@@ -1,78 +1,129 @@
-# Dams's Combat Mechanics (DCM) ⚔️
+# Dams's Combat Mechanics (DCM) ??
 
-**Dams's Combat Mechanics (DCM)** is a comprehensive combat overhaul for Minecraft servers, designed to add depth, skill-expression, and variety to PvP and PvE. It introduces tactical movement, timed defensive maneuvers, specialized weapon combos, and dual-wielding capabilities.
+**Dams's Combat Mechanics (DCM)** is a full combat overhaul plugin for Paper 1.21.11 servers. It expands vanilla combat with timing-based defense, weapon synergy, high-impact combo systems, mobility tools, and passive clutch mechanics.
 
-DCM is built with cross-platform play in mind, featuring native support for Bedrock players via Floodgate.
-
----
-
-##  Features & Abilities
-
-###  Tactical Movement
-* **Dash Ability**: Double-tap (or triple-tap) sneak within 1 second to perform a swift dash in your looking direction.
-    * **Effect**: Grants a velocity boost and **0.3s of invulnerability**.
-    * **Cost**: Consumes 5 Saturation points or 2 Hunger bars.
-    * **Cooldown**: 5 seconds.
-    * **Toggle**: Use `/dash` to enable or disable this for yourself.
-
-###  Defensive Maneuvers
-* **Sword Parry**: Swing your sword just before being hit to negate incoming damage.
-    * **Window**: 200ms for Java players / 400ms for Bedrock players.
-    * **Effect**: Cancels damage, removes fire ticks, and provides a small vertical "bounce."
-    * **Cooldown**: 10 seconds.
-* **Shield Parry**: Raise your shield at the perfect moment.
-    * **Window**: 250ms.
-    * **Effect**: Stuns the attacker (Slowness II for 5 seconds).
-    * **Cooldown**: 30 seconds.
-
-###  Advanced Weaponry
-* **Axe Slam (True Damage)**: Land 3 critical hits to build a combo.
-    * **The Slam**: The 4th critical hit executes a Slam, dealing **3 Hearts of True Damage** (ignores armor and shields).
-    * **Note**: Missing hits or being hit yourself reduces your combo count.
-* **Shield Breaker**: Hitting a blocking opponent 4 times consecutively with Dual Swords will disable their shield entirely for 5 seconds.
-
-###  Dual Wielding (Double Strike)
-Wielding two Swords or two Axes enables the **Double Strike** mechanic.
-* **Damage**: Adds the base damage and enchantments (like Sharpness) of your off-hand weapon to your main-hand attack.
-* **Exhaustion**: This powerful strike has a 3-second internal cooldown.
-
-###  Archery
-* **Double Shot**: Hold two bows simultaneously to prepare a massive volley.
-    * **Trigger**: Draw for at least 2 seconds.
-    * **Effect**: Fires two arrows at once, with each arrow dealing **Double Damage**.
-
-###  Passive Skills
-* **Adrenaline Rush**: When your health drops to 4 hearts or lower, your survival instincts kick in.
-    * **Buffs**: Speed II, Resistance II, and Strength I for 10 seconds.
-    * **Cooldown**: 3 minutes.
+This `2.0` branch is a full redesign of the plugin systems and combat flow.
 
 ---
 
-## 🛠️ Commands
+## Features & Abilities
+
+### Tactical Movement
+- **Dash**: Sprint + sneak to perform a fast directional dash.
+- **Invulnerability Frames**: Grants **0.3s invulnerability** during dash.
+- **Cost**: Uses **5 saturation** first, then **4 hunger** if saturation is too low.
+- **Cooldown**: **5 seconds**.
+- **Toggle**: `/dash` enables/disables dash per player.
+- **Feedback**: Action bar cooldown, sound, and particle effects.
+
+### Dual-Wield Combat
+- **Double Strike (Swords/Axes)**: Using two swords or two axes adds off-hand base damage + Sharpness bonus to the main hit.
+- **Cooldown**: **3 seconds** per boosted dual-melee strike.
+- **Mace Exclusion**: Maces are intentionally excluded from dual-melee Double Strike.
+- **Exhaustion Messaging**: Cooldown warning messages are rate-limited to prevent chat spam.
+
+### Shield Breaker (Dual Swords)
+- Hitting a **blocking player** with dual swords builds a shield-hit streak.
+- At **4 consecutive shield hits**, the target shield is disabled for **5 seconds**.
+- Streak resets on target swap, timeout, or when the target stops blocking.
+- Shield disable is enforced with vanilla-style cooldown + block prevention.
+
+### Dual-Bow Archery
+- Holding **two bows** enables charged double-shot behavior.
+- Requires **2.0s draw time** in non-creative modes.
+- On release:
+- First arrow damage is doubled.
+- A second arrow is launched with slight spread and matching boosted damage.
+- Includes draw-time validation and cancellation if requirements are not met.
+
+### Parry System
+- **Sword Parry**: Right-click timing with sword before impact to negate incoming damage.
+- **Parry Window**:
+- Java: **200ms**
+- Bedrock (Floodgate): **400ms**
+- **Sword Parry Cooldown**: **4 seconds**.
+- **Effects**: Damage cancel, fire tick clear, short vertical bump, sound/particles, action-bar feedback.
+
+- **Shield Parry**: Timed shield raise window.
+- **Parry Window**: **250ms**.
+- **Shield Parry Cooldown**: **10 seconds**.
+- **Effect**: Applies Slowness II stun to attacker for **5 seconds**.
+
+### Riposte
+- Successful sword parry opens a **1.5s riposte window**.
+- Next melee hit during that window gains:
+- **1.6x damage multiplier**
+- Enhanced knockback (horizontal + vertical)
+- Uses dedicated visual/audio combat effects.
+
+### Mace Systems
+- **Mace Heavy Crush**: Mace attacks against a blocking target instantly shield-break for **5 seconds**.
+- **Standing Guard (Mace Guard)**:
+- Right-click with a mace activates a **1.5s guard window**.
+- Incoming damage is reduced to **60%** during active guard.
+- Knockback is neutralized during guard.
+- Real-time action-bar countdown shows remaining guard time.
+
+### Axe Combo / Slam
+- Critical hits with axes build combo stacks.
+- Combo timeout: **8 seconds** between valid crits.
+- On the **4th critical hit**, Slam triggers:
+- Deals **3 hearts true damage** (`6.0` health), bypassing normal mitigation flow.
+- If target is actively blocking with an unbroken shield, Slam is blocked.
+- Combo can be reduced when the combo owner is hit.
+
+### Adrenaline Rush
+- Triggers when player would drop to **4 hearts or lower** (and survives).
+- Duration: **10 seconds**.
+- Buffs:
+- Speed II
+- Resistance II
+- Strength I
+- Cooldown: **3 minutes**.
+- Includes dedicated audiovisual effect burst.
+
+---
+
+## ??? Commands
+
 | Command | Description |
 | :--- | :--- |
-| `/dash` | Toggles your ability to use the Dash mechanic. |
+| `/dash` | Toggles dash for the player using the command. |
 
 ---
 
-## ⚙️ Technical Details
-* **Bedrock Compatibility**: Uses the Floodgate API to detect Bedrock players and automatically doubles the Parry window to account for latency and touch controls.
-* **Shield Logic**: Includes a custom shield-disable system that visually grays out the shield in the hotbar (Vanilla Cooldown) and prevents interaction.
-* **Performance**: Includes automated memory cleanup tasks to ensure cooldown and combo maps stay lean.
+## ?? Technical Details
+
+- **Server Software**: Paper API `1.21.11-R0.1-SNAPSHOT`.
+- **Java Version**: Java **21** target/toolchain.
+- **Optional Dependency**: Floodgate `2.2.0-SNAPSHOT` for Bedrock player detection and parry-window adaptation.
+- **Bedrock Handling**: If Floodgate is missing, plugin remains functional and logs a warning, but Bedrock-specific timing adjustments are disabled.
+- **CombatFX Module**: Centralized particle/sound effect handling for parry, dash, riposte, and adrenaline.
+- **Memory Hygiene**:
+- Periodic cleanup of cooldown/timeout state maps.
+- Quit-event cleanup for all tracked player combat states.
+- **Shield Disable Enforcement**:
+- Tracks per-player broken shield windows.
+- Applies shield cooldown ticks.
+- Temporarily disrupts off-hand shield blocking to enforce disable behavior.
 
 ---
 
-##  Installation
-1.  Download the latest `.jar` file.
-2.  Place it in your server's `/plugins/` folder.
-3.  (Optional) Install **Floodgate** to enable Bedrock-specific balancing.
-4.  Restart your server.
-5.  For bedrock, I will have seperate files later, labelled "Bedrock"
+## Installation
+
+1. Build or download the latest DCM `.jar`.
+2. Place the jar in `/plugins/`.
+3. (Optional) Install **Floodgate** (and Geyser setup) for Bedrock-aware parry timing.
+4. Start or restart the server.
 
 ---
+
 ## License
+
 This plugin is licensed under the APGL-v3 LICENSE, if you fork this repository and build your own version, you MUST follow the license file.
+
 ---
 
-##  Author
-Developed by **Dams/st4r/star, whatever is easier and you recognize me with lmao :>**. 
+## Author
+
+Developed by **Dams/st4r/star, whatever is easier and you recognize me with lmao :>**.

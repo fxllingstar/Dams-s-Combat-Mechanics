@@ -57,9 +57,9 @@ public class DCM extends JavaPlugin implements Listener {
     private static final long SWORD_PARRY_WINDOW_MS = 200;
     private static final long SWORD_PARRY_WINDOW_BEDROCK_MS = 400;
     private static final long SHIELD_PARRY_WINDOW_MS = 250;
-    private static final long SWORD_PARRY_COOLDOWN_MS = 10000;
-    private static final long SHIELD_PARRY_COOLDOWN_MS = 30000;
-    private static final int SHIELD_STUN_DURATION_TICKS = 100; // 5 seconds
+    private static final long SWORD_PARRY_COOLDOWN_MS = 4000;
+    private static final long SHIELD_PARRY_COOLDOWN_MS = 10000;
+    private static final int SHIELD_STUN_DURATION_TICKS = 100;
     private static final long RIPOSTE_WINDOW_MS = 1500;
     private static final double RIPOSTE_DAMAGE_MULTIPLIER = 1.6;
     private static final double RIPOSTE_KNOCKBACK_HORIZONTAL = 1.1;
