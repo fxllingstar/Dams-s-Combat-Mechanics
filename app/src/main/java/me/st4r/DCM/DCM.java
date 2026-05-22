@@ -106,6 +106,7 @@ public class DCM extends JavaPlugin implements Listener {
     private final Map<UUID, Long> shieldParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> brokenShields = new HashMap<>();
     private final Map<UUID, Long> maceGuardTimes = new HashMap<>();
+    private final Map<UUID, BukkitRunnable> maceGuardCountdownTasks = new HashMap<>();
     private final Map<UUID, Long> riposteWindows = new HashMap<>();
  
     // ===========================
@@ -141,13 +142,22 @@ public class DCM extends JavaPlugin implements Listener {
 
         getServer().getPluginManager().registerEvents(this, this);
         startMemoryCleanupTask();
+        getLogger().info("-----------------------------------------------------------------------");
         getLogger().info("DCM (Dams's Combat Mechanics) v2.0 has been enabled!");
-        getLogger().info("Features: Dual Wielding, Parry System, Axe Combos, Dash, Adrenaline Rush");
+        getLogger().info("Have fun and Good Luck!");
+        getLogger().info("-----------------------------------------------------------------------");
     }
  
     @Override
     public void onDisable() {
-        getLogger().info("DCM has been disabled!");
+        for (BukkitRunnable task : maceGuardCountdownTasks.values()) {
+            task.cancel();
+        }
+        maceGuardCountdownTasks.clear();
+
+        getLogger().info("Oh.. server is dead?");
+        getLogger().info("DCM has been disabled! :>");
+        getLogger().info("0x6B696E646E657373 <3");
     }
  
     /**
@@ -182,7 +192,7 @@ public class DCM extends JavaPlugin implements Listener {
                     return false;
                 });
             }
-        }.runTaskTimer(this, 1200L, 1200L); // Runs every 60 seconds
+        }.runTaskTimer(this, 1200L, 1200L);
     }
  
     // ===========================
@@ -230,6 +240,10 @@ public class DCM extends JavaPlugin implements Listener {
         brokenShields.remove(id);
         riposteWindows.remove(id);
         maceGuardTimes.remove(id);
+        BukkitRunnable guardTask = maceGuardCountdownTasks.remove(id);
+        if (guardTask != null) {
+            guardTask.cancel();
+        }
         // Axe combo cleanup
         axeCombos.remove(id);
         axeComboTimestamps.remove(id);
@@ -484,7 +498,11 @@ public class DCM extends JavaPlugin implements Listener {
 
         if (mainHand != Material.MACE && offHand != Material.MACE) return;
 
-        maceGuardTimes.put(player.getUniqueId(), System.currentTimeMillis() + MACE_GUARD_WINDOW_MS);
+        UUID playerId = player.getUniqueId();
+        long expireAt = System.currentTimeMillis() + MACE_GUARD_WINDOW_MS;
+
+        maceGuardTimes.put(playerId, expireAt);
+        startMaceGuardCountdown(player, playerId);
     }
  
     @EventHandler(priority = EventPriority.HIGH)
@@ -804,6 +822,57 @@ public class DCM extends JavaPlugin implements Listener {
         return true;
     }
  
+    // ========================================================
+    // MACEGUARD COOLDOWN
+    // ========================================================
+    private void startMaceGuardCountdown(Player player, UUID playerId) {
+        BukkitRunnable existingTask = maceGuardCountdownTasks.remove(playerId);
+        if (existingTask != null) {
+            existingTask.cancel();
+        }
+
+        BukkitRunnable task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!player.isOnline()) {
+                    maceGuardTimes.remove(playerId);
+                    maceGuardCountdownTasks.remove(playerId);
+                    cancel();
+                    return;
+                }
+
+                long now = System.currentTimeMillis();
+                Long expireAt = maceGuardTimes.get(playerId);
+
+                if (expireAt == null || now >= expireAt) {
+                    if (expireAt != null) {
+                        player.sendActionBar("§6Standing Guard! §e(0.0s remaining)");
+                    }
+                    maceGuardTimes.remove(playerId);
+                    maceGuardCountdownTasks.remove(playerId);
+                    cancel();
+                    return;
+                }
+
+                Material mainHand = player.getInventory().getItemInMainHand().getType();
+                Material offHand = player.getInventory().getItemInOffHand().getType();
+                if (mainHand != Material.MACE && offHand != Material.MACE) {
+                    maceGuardTimes.remove(playerId);
+                    maceGuardCountdownTasks.remove(playerId);
+                    player.sendActionBar("§7Guard cancelled.");
+                    cancel();
+                    return;
+                }
+
+                double secondsLeft = (expireAt - now) / 1000.0;
+                player.sendActionBar("§6Standing Guard! §e(" + String.format("%.1f", secondsLeft) + "s remaining)");
+            }
+        };
+
+        maceGuardCountdownTasks.put(playerId, task);
+        task.runTaskTimer(this, 0L, 2L);
+    }
+
     // ===============================================
     // UTILITY METHODS
     // ===============================================
