@@ -168,7 +168,7 @@ public class DCM extends JavaPlugin implements Listener {
             @Override
             public void run() {
                 long now = System.currentTimeMillis();
-                long staleTime = now - 10000; // 10 seconds ago
+                long staleTime = now - 10000;
  
                 // Clean up timing maps
                 lastSwingTimes.entrySet().removeIf(entry -> entry.getValue() < staleTime);

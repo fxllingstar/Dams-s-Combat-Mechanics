@@ -127,3 +127,4 @@ This plugin is licensed under the APGL-v3 LICENSE, if you fork this repository a
 ## Author
 
 Developed by **Dams/st4r/star, whatever is easier and you recognize me with lmao :>**.
+Co-developed by **TheSandrone**
