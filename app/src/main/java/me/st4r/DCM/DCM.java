@@ -17,6 +17,7 @@ import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
@@ -35,7 +36,7 @@ import java.util.UUID;
  * combo systems, and mobility enhancements.
  * 
  * @author st4r
- * @version 1.1
+ * @version 2.0.5
  */
 public class DCM extends JavaPlugin implements Listener {
  
@@ -49,6 +50,7 @@ public class DCM extends JavaPlugin implements Listener {
     private static final long SHIELD_STREAK_TIMEOUT_MS = 4000;
     private static final long MACE_GUARD_WINDOW_MS = 1500;
     private static final double MACE_GUARD_DAMAGE_MULTIPLIER = 0.6;
+    private static final long MACE_GUARD_COOLDOWN_MS = 5000;
 
  
     // ===========================
@@ -106,6 +108,7 @@ public class DCM extends JavaPlugin implements Listener {
     private final Map<UUID, Long> shieldParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> brokenShields = new HashMap<>();
     private final Map<UUID, Long> maceGuardTimes = new HashMap<>();
+    private final Map<UUID, Long> maceGuardCooldowns = new HashMap<>();
     private final Map<UUID, BukkitRunnable> maceGuardCountdownTasks = new HashMap<>();
     private final Map<UUID, Long> riposteWindows = new HashMap<>();
  
@@ -179,6 +182,7 @@ public class DCM extends JavaPlugin implements Listener {
                 // Clean up expired shield breaks
                 brokenShields.entrySet().removeIf(entry -> entry.getValue() < now);
                 maceGuardTimes.entrySet().removeIf(entry -> entry.getValue() < now);
+                maceGuardCooldowns.entrySet().removeIf(entry -> entry.getValue() < now);
                 
                 // Clean up expired invulnerability
                 invulnerablePlayers.entrySet().removeIf(entry -> entry.getValue() < now);
@@ -240,6 +244,7 @@ public class DCM extends JavaPlugin implements Listener {
         brokenShields.remove(id);
         riposteWindows.remove(id);
         maceGuardTimes.remove(id);
+        maceGuardCooldowns.remove(id);
         BukkitRunnable guardTask = maceGuardCountdownTasks.remove(id);
         if (guardTask != null) {
             guardTask.cancel();
@@ -447,27 +452,28 @@ public class DCM extends JavaPlugin implements Listener {
  
     @EventHandler
     public void onSwordGuardAttempt(PlayerInteractEvent event) {
-        if (event.isCancelled()) return;
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
+        if (event.getHand() == EquipmentSlot.OFF_HAND) return;
 
-        Player player = event.getPlayer();
-        Material mainHand = player.getInventory().getItemInMainHand().getType();
-        if (!mainHand.name().endsWith("_SWORD")) return;
+        Material usedMaterial = event.hasItem() ? event.getMaterial() : Material.AIR;
+        if (!usedMaterial.name().endsWith("_SWORD")) {
+            Material mainHand = event.getPlayer().getInventory().getItemInMainHand().getType();
+            if (!mainHand.name().endsWith("_SWORD")) return;
+        }
 
-        lastSwingTimes.put(player.getUniqueId(), System.currentTimeMillis());
+        lastSwingTimes.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
     }
  
     @EventHandler
     public void onShieldRaise(PlayerInteractEvent event) {
-        if (event.isCancelled()) return;
+        Action action = event.getAction();
+        if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
+
+        Material usedMaterial = event.hasItem() ? event.getMaterial() : Material.AIR;
+        if (usedMaterial != Material.SHIELD) return;
+
         Player player = event.getPlayer();
-        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
- 
-        Material mainHand = player.getInventory().getItemInMainHand().getType();
-        Material offHand = player.getInventory().getItemInOffHand().getType();
- 
-        if (mainHand != Material.SHIELD && offHand != Material.SHIELD) return;
  
         // ===========================
         // SHIELD BREAK CHECK
@@ -476,6 +482,7 @@ public class DCM extends JavaPlugin implements Listener {
             long timeLeft = brokenShields.get(player.getUniqueId()) - System.currentTimeMillis();
             player.sendActionBar("§c🛡 Shield Disabled! (" + String.format("%.1f", timeLeft / 1000.0) + "s)");
             event.setCancelled(true);
+            forceStopShieldUse(player);
             return;
         }
  
@@ -487,21 +494,30 @@ public class DCM extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onMaceGuardStart(PlayerInteractEvent event) {
-        if (event.isCancelled()) return;
-
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK) return;
+        if (event.getHand() == EquipmentSlot.OFF_HAND) return;
 
         Player player = event.getPlayer();
-        Material mainHand = player.getInventory().getItemInMainHand().getType();
-        Material offHand = player.getInventory().getItemInOffHand().getType();
-
-        if (mainHand != Material.MACE && offHand != Material.MACE) return;
+        Material usedMaterial = event.hasItem() ? event.getMaterial() : Material.AIR;
+        if (usedMaterial != Material.MACE) {
+            Material mainHand = player.getInventory().getItemInMainHand().getType();
+            if (mainHand != Material.MACE) return;
+        }
 
         UUID playerId = player.getUniqueId();
-        long expireAt = System.currentTimeMillis() + MACE_GUARD_WINDOW_MS;
+        long now = System.currentTimeMillis();
+        Long guardExpire = maceGuardTimes.get(playerId);
+        if (guardExpire != null && now <= guardExpire) return;
 
-        maceGuardTimes.put(playerId, expireAt);
+        long cd = maceGuardCooldowns.getOrDefault(playerId, 0L);
+        if (now < cd) {
+            player.sendActionBar("§cGuard on cooldown: " + String.format("%.1f", (cd - now) / 1000.0) + "s");
+            return;
+        }
+
+        maceGuardTimes.put(playerId, now + MACE_GUARD_WINDOW_MS);
+        maceGuardCooldowns.put(playerId, now + MACE_GUARD_COOLDOWN_MS);
         startMaceGuardCountdown(player, playerId);
     }
  
@@ -567,7 +583,10 @@ public class DCM extends JavaPlugin implements Listener {
         Long guardExpire = maceGuardTimes.get(victim.getUniqueId());
         if (guardExpire != null && now <= guardExpire) {
             event.setDamage(event.getDamage() * MACE_GUARD_DAMAGE_MULTIPLIER);
-            victim.setVelocity(new Vector(0, 0, 0));
+            final Player guardedVictim = victim;
+            new BukkitRunnable() {
+                @Override public void run() { guardedVictim.setVelocity(new Vector(0, 0, 0)); }
+            }.runTaskLater(DCM.this, 1L);
         }
  
         // ===========================
@@ -657,6 +676,27 @@ public class DCM extends JavaPlugin implements Listener {
             }
         }
     }
+
+    // ===============================================
+    // MACE GUARD: ENTITY DAMAGE (ARROWS, ETC.)
+    // ===============================================
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onMaceGuardEntityHit(EntityDamageByEntityEvent event) {
+        if (event.isCancelled()) return;
+        if (!(event.getEntity() instanceof Player victim)) return;
+        if (event.getDamager() instanceof Player) return;
+
+        UUID victimId = victim.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long guardExpire = maceGuardTimes.get(victimId);
+        if (guardExpire == null || now > guardExpire) return;
+
+        event.setDamage(event.getDamage() * MACE_GUARD_DAMAGE_MULTIPLIER);
+        new BukkitRunnable() {
+            @Override public void run() { victim.setVelocity(new Vector(0, 0, 0)); }
+        }.runTaskLater(DCM.this, 1L);
+    }
  
     // ===============================================
     // DASH ABILITY
@@ -744,7 +784,10 @@ public class DCM extends JavaPlugin implements Listener {
         long now = System.currentTimeMillis();
         if (guardExpire != null && now <= guardExpire) {
             event.setDamage(event.getDamage() * MACE_GUARD_DAMAGE_MULTIPLIER);
-            victim.setVelocity(new Vector(0, 0, 0));
+            final Player guardedVictim = victim;
+            new BukkitRunnable() {
+                @Override public void run() { guardedVictim.setVelocity(new Vector(0, 0, 0)); }
+            }.runTaskLater(DCM.this, 1L);
         }
  
         // Calculate post-damage health
@@ -778,32 +821,34 @@ public class DCM extends JavaPlugin implements Listener {
      * @param durationMs Duration in milliseconds
      */
     private void breakShield(UUID playerId, long durationMs) {
-        long expireTime = System.currentTimeMillis() + durationMs;
-        brokenShields.put(playerId, expireTime);
+        brokenShields.put(playerId, System.currentTimeMillis() + durationMs);
 
         Player player = getServer().getPlayer(playerId);
         if (player != null) {
             player.getWorld().playSound(player.getLocation(), Sound.ITEM_SHIELD_BREAK, 1.0f, 0.8f);
             player.sendActionBar("§c§l🛡 SHIELD BROKEN! (" + String.format("%.1f", durationMs / 1000.0) + "s)");
-
-            int cooldownTicks = (int) (durationMs / 50);
-            player.setCooldown(Material.SHIELD, cooldownTicks);
-
-            // Force out of blocking state by swapping items
-            ItemStack offHand = player.getInventory().getItemInOffHand();
-            if (offHand.getType() == Material.SHIELD) {
-                ItemStack mainHand = player.getInventory().getItemInMainHand();
-                player.getInventory().setItemInOffHand(mainHand);
-                player.getInventory().setItemInMainHand(offHand);
-
-                getServer().getScheduler().runTaskLater(this, () -> {
-                    if (player.isOnline()) {
-                        player.getInventory().setItemInOffHand(offHand);
-                        player.getInventory().setItemInMainHand(mainHand);
-                    }
-                }, 1L);
-            }
+            player.setCooldown(Material.SHIELD, (int) (durationMs / 50));
+            forceStopShieldUse(player);
         }
+    }
+
+    private void forceStopShieldUse(Player player) {
+        player.clearActiveItem();
+
+        UUID playerId = player.getUniqueId();
+        new BukkitRunnable() {
+            int attempts = 0;
+
+            @Override
+            public void run() {
+                if (!player.isOnline() || !isShieldBroken(playerId) || !player.isBlocking() || attempts++ >= 8) {
+                    cancel();
+                    return;
+                }
+
+                player.clearActiveItem();
+            }
+        }.runTaskTimer(this, 1L, 1L);
     }
  
     /**
