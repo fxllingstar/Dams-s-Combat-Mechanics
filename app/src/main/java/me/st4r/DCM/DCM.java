@@ -44,7 +44,7 @@ public class DCM extends JavaPlugin implements Listener {
     // DUAL WIELDING CONFIGURATION
     // ===========================
     private static final long DUAL_MELEE_COOLDOWN_MS = 3000;
-    private static final long DUAL_BOW_CHARGE_TIME_MS = 2000;
+    private static final long DUAL_BOW_CHARGE_TIME_MS = 1000;
     private static final int SHIELD_BREAK_THRESHOLD = 4;
     private static final long SHIELD_BREAK_DURATION_MS = 5000;
     private static final long SHIELD_STREAK_TIMEOUT_MS = 4000;
@@ -146,7 +146,7 @@ public class DCM extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         startMemoryCleanupTask();
         getLogger().info("-----------------------------------------------------------------------");
-        getLogger().info("DCM (Dams's Combat Mechanics) v2.0 has been enabled!");
+        getLogger().info("DCM (Dams's Combat Mechanics) v2.1 has been enabled!");
         getLogger().info("Have fun and Good Luck!");
         getLogger().info("-----------------------------------------------------------------------");
     }
@@ -158,7 +158,7 @@ public class DCM extends JavaPlugin implements Listener {
         }
         maceGuardCountdownTasks.clear();
 
-        getLogger().info("Oh.. server is dead?");
+        getLogger().severe("Oh.. server is dead?");
         getLogger().info("DCM has been disabled! :>");
         getLogger().info("0x6B696E646E657373 <3");
     }
@@ -260,6 +260,7 @@ public class DCM extends JavaPlugin implements Listener {
         
         // Adrenaline cleanup
         adrenalineCooldowns.remove(id);
+         getLogger().info("Cleaned up combat data for player: " + event.getPlayer().getName());
     }
  
     // ===============================================
@@ -530,6 +531,20 @@ public class DCM extends JavaPlugin implements Listener {
  
         long now = System.currentTimeMillis();
         UUID attackerId = attacker.getUniqueId();
+        UUID victimId = victim.getUniqueId();
+
+        // ===============================================
+    // APPLY ADRENALINE ON CRIT HITS
+    // ===============================================
+      double rawDamage = event.getFinalDamage();
+      if (rawDamage >= 10.0) {
+      long cd = adrenalineCooldowns.getOrDefault(victimId, 0L);
+      if (now >= cd){
+        triggerAdrenaline(victim, now);
+      }
+    
+    }
+
 
         Long riposteExpiry = riposteWindows.get(attackerId);
         if (riposteExpiry != null) {
@@ -677,6 +692,8 @@ public class DCM extends JavaPlugin implements Listener {
         }
     }
 
+
+
     // ===============================================
     // MACE GUARD: ENTITY DAMAGE (ARROWS, ETC.)
     // ===============================================
@@ -774,11 +791,11 @@ public class DCM extends JavaPlugin implements Listener {
     // ADRENALINE RUSH
     // ===============================================
  
-    @EventHandler(priority = EventPriority.HIGH)
+   @EventHandler(priority = EventPriority.HIGH)
     public void onAnyDamage(org.bukkit.event.entity.EntityDamageEvent event) {
         if (event.isCancelled()) return;
         if (!(event.getEntity() instanceof Player victim)) return;
-        if (event instanceof EntityDamageByEntityEvent) return;
+        if (event instanceof EntityDamageByEntityEvent) return; // Handled separately for burst checks
 
         Long guardExpire = maceGuardTimes.get(victim.getUniqueId());
         long now = System.currentTimeMillis();
@@ -793,23 +810,25 @@ public class DCM extends JavaPlugin implements Listener {
         // Calculate post-damage health
         double finalHealth = victim.getHealth() - event.getFinalDamage();
  
-        // Trigger adrenaline if dropping to/below threshold without dying
         if (finalHealth > 0 && finalHealth <= ADRENALINE_HEALTH_THRESHOLD) {
             long cd = adrenalineCooldowns.getOrDefault(victim.getUniqueId(), 0L);
- 
             if (now >= cd) {
-                // Apply buffs
-                victim.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, ADRENALINE_DURATION_TICKS, 1));
-                victim.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, ADRENALINE_DURATION_TICKS, 1));
-                victim.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, ADRENALINE_DURATION_TICKS, 0));
- 
-                CombatFX.playAdrenalineEffects(victim);
-                victim.sendActionBar("§c§lADRENALINE RUSH!");
- 
-                adrenalineCooldowns.put(victim.getUniqueId(), now + ADRENALINE_COOLDOWN_MS);
+                triggerAdrenaline(victim, now);
             }
         }
     }
+
+    private void triggerAdrenaline(Player victim, long now) {
+        victim.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, ADRENALINE_DURATION_TICKS, 1));
+        victim.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, ADRENALINE_DURATION_TICKS, 1));
+        victim.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, ADRENALINE_DURATION_TICKS, 0));
+ 
+        CombatFX.playAdrenalineEffects(victim);
+        victim.sendActionBar("§c§lADRENALINE RUSH!");
+ 
+        adrenalineCooldowns.put(victim.getUniqueId(), now + ADRENALINE_COOLDOWN_MS);
+    }
+    
  
     // ===============================================
     // SHIELD BREAKING SYSTEM
@@ -947,3 +966,6 @@ public class DCM extends JavaPlugin implements Listener {
         return 1.0;
     }
 }
+
+  
+    
