@@ -70,10 +70,11 @@ This `2.0` branch is a full redesign of the plugin systems and combat flow.
 - On the **4th critical hit**, Slam triggers:
 - Deals **3 hearts true damage** (`6.0` health), bypassing normal mitigation flow.
 - If target is actively blocking with an unbroken shield, Slam is blocked.
-- Combo can be reduced when the combo owner is hit.
+- Combo can be reduced when the combo owner is hit. (This will be reworked for easier slams.)
 
 ### Adrenaline Rush
 - Triggers when player would drop to **4 hearts or lower** (and survives).
+- Also triggers on a critical hit (A hit which deals 5 hearts in a single blow)
 - Duration: **10 seconds**.
 - Buffs:
 - Speed II
