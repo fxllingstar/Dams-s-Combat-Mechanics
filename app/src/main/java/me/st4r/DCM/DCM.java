@@ -36,14 +36,14 @@ import java.util.UUID;
  * combo systems, and mobility enhancements.
  * 
  * @author st4r
- * @version 2.0.6-debug
+ * @version 2.0.6
  */
 public class DCM extends JavaPlugin implements Listener {
  
     // ===========================
     // DEBUG CONFIGURATION
     // ===========================
-    private boolean debug = true; // SET THIS TO false TO DISABLE DEBUGGING
+    private boolean debug = false;
  
     // ===========================
     // DUAL WIELDING CONFIGURATION
@@ -76,7 +76,7 @@ public class DCM extends JavaPlugin implements Listener {
     // AXE COMBO CONFIGURATION
     // ===========================
     private static final int AXE_COMBO_MAX = 4;
-    private static final double AXE_SLAM_TRUE_DAMAGE = 6.0; // 3 hearts
+    private static final double AXE_SLAM_TRUE_DAMAGE = 6.0; 
     private static final long AXE_COMBO_TIMEOUT_MS = 8000;
  
     // ===========================
@@ -90,9 +90,9 @@ public class DCM extends JavaPlugin implements Listener {
     // ===========================
     // ADRENALINE CONFIGURATION
     // ===========================
-    private static final long ADRENALINE_COOLDOWN_MS = 180000; // 3 minutes
-    private static final int ADRENALINE_DURATION_TICKS = 200; // 10 seconds
-    private static final double ADRENALINE_HEALTH_THRESHOLD = 8.0; // 4 hearts
+    private static final long ADRENALINE_COOLDOWN_MS = 180000; 
+    private static final int ADRENALINE_DURATION_TICKS = 200; 
+    private static final double ADRENALINE_HEALTH_THRESHOLD = 8.0; 
  
     // ===========================
     // DUAL WIELDING STATE
@@ -149,6 +149,10 @@ public class DCM extends JavaPlugin implements Listener {
         }
     }
 
+    private void sendActionBar(Player player, ChatColor color, ChatColor style, String message) {
+        player.sendActionBar(color + "" + style + message);
+    }
+
     @Override
     public void onEnable() {
         debugLog("=== onEnable() START ===");
@@ -168,7 +172,7 @@ public class DCM extends JavaPlugin implements Listener {
         debugLog("Memory cleanup task started");
         
         getLogger().info("-----------------------------------------------------------------------");
-        getLogger().info("DCM (Dams's Combat Mechanics) v2.1-debug has been enabled!");
+        getLogger().info("DCM (Dams's Combat Mechanics) v" + getDescription().getVersion() + " has been enabled!");
         getLogger().info("DEBUG MODE: " + (debug ? "ENABLED" : "DISABLED"));
         getLogger().info("Have fun and Good Luck!");
         getLogger().info("-----------------------------------------------------------------------");
@@ -239,7 +243,7 @@ public class DCM extends JavaPlugin implements Listener {
                 cleanedCount += removed;
                 debugLog("Cleaned " + removed + " expired riposteWindows");
 
-                // Clean up expired shield breaks
+           
                 beforeSize = brokenShields.size();
                 brokenShields.entrySet().removeIf(entry -> entry.getValue() < now);
                 removed = beforeSize - brokenShields.size();
@@ -258,14 +262,14 @@ public class DCM extends JavaPlugin implements Listener {
                 cleanedCount += removed;
                 debugLog("Cleaned " + removed + " expired maceGuardCooldowns");
 
-                // Clean up expired invulnerability
+             
                 beforeSize = invulnerablePlayers.size();
                 invulnerablePlayers.entrySet().removeIf(entry -> entry.getValue() < now);
                 removed = beforeSize - invulnerablePlayers.size();
                 cleanedCount += removed;
                 debugLog("Cleaned " + removed + " expired invulnerablePlayers");
 
-                // Clean up stale axe combos
+             
                 beforeSize = axeComboTimestamps.size();
                 axeComboTimestamps.entrySet().removeIf(entry -> {
                     boolean isStale = entry.getValue() < staleTime;
@@ -304,7 +308,7 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("Cancelled mace guard task for disconnecting player");
         }
         
-        // Clean up all state for this player
+ 
         meleeCooldowns.remove(playerId);
         bowDrawStarts.remove(playerId);
         shieldHitStreak.remove(playerId);
@@ -361,7 +365,7 @@ public class DCM extends JavaPlugin implements Listener {
         long now = System.currentTimeMillis();
         debugLog("Current timestamp: " + now);
 
-        // Check if attacker is invulnerable from dash
+
         Long invulnExpire = invulnerablePlayers.get(attackerId);
         if (invulnExpire != null && now <= invulnExpire) {
             debugLog("Attacker is invulnerable from dash, allowing attack");
@@ -423,7 +427,7 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("Applied riposte knockback: " + direction);
             
             attacker.playSound(attacker.getLocation(), Sound.ITEM_TRIDENT_HIT, 1.0f, 1.5f);
-            attacker.sendActionBar("§c§l⚔ RIPOSTE! (" + String.format("%.1f", riposteDamage) + " damage)");
+            sendActionBar(attacker, ChatColor.RED, ChatColor.BOLD, "RIPOSTE! (" + String.format("%.1f", riposteDamage) + " damage)");
             
             riposteWindows.remove(attackerId);
             debugLog("Riposte window consumed");
@@ -463,7 +467,7 @@ public class DCM extends JavaPlugin implements Listener {
                 
                 long lastMsgTime = lastExhaustionMsgTimes.getOrDefault(attackerId, 0L);
                 if (now - lastMsgTime >= 1000) {
-                    attacker.sendActionBar("§7Exhausted... (wait " + remaining + "s)");
+                    sendActionBar(attacker, ChatColor.GRAY, ChatColor.BOLD, "Exhausted... (wait " + remaining + "s)");
                     lastExhaustionMsgTimes.put(attackerId, now);
                     debugLog("Sent exhaustion message to player");
                 }
@@ -491,7 +495,7 @@ public class DCM extends JavaPlugin implements Listener {
             
 
             attacker.playSound(attacker.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.2f);
-            attacker.sendActionBar("§6§lDUAL STRIKE! §e(" + String.format("%.1f", totalDamage) + " damage)");
+            sendActionBar(attacker, ChatColor.GOLD, ChatColor.BOLD, "DUAL STRIKE! (" + String.format("%.1f", totalDamage) + " damage)");
             debugLog("Applied dual wield strike with total damage: " + totalDamage);
 
             meleeCooldowns.put(attackerId, now + DUAL_MELEE_COOLDOWN_MS);
@@ -523,7 +527,7 @@ public class DCM extends JavaPlugin implements Listener {
 
                     if (streak >= SHIELD_BREAK_THRESHOLD) {
                         breakShield(victimId, SHIELD_BREAK_DURATION_MS);
-                        attacker.sendActionBar("§c§l⚔ SHIELD SHATTERED!");
+                        sendActionBar(attacker, ChatColor.RED, ChatColor.BOLD, "SHIELD SHATTERED!");
                         shieldHitStreak.remove(attackerId);
                         debugLog("Shield broken! Streak threshold reached.");
                     }
@@ -533,6 +537,10 @@ public class DCM extends JavaPlugin implements Listener {
                 shieldStreakTimestamps.put(attackerId, now);
                 debugLog("Updated last target and streak timestamp");
             }
+        }
+
+        if (victim instanceof Player victimPlayer) {
+            handleAdrenalineIfNeeded(victimPlayer, now, event.getFinalDamage());
         }
         
         debugLog("=== onPlayerAttack() END ===");
@@ -560,7 +568,7 @@ public class DCM extends JavaPlugin implements Listener {
         debugLog("Combo count: " + currentCombo + "/" + AXE_COMBO_MAX);
 
         if (currentCombo < AXE_COMBO_MAX) {
-            attacker.sendActionBar("§6⚔ Axe Combo: §e" + currentCombo + "/" + AXE_COMBO_MAX);
+            attacker.sendActionBar(ChatColor.GOLD + "" + ChatColor.BOLD + "Axe Combo: " + ChatColor.YELLOW + currentCombo + "/" + AXE_COMBO_MAX);
             attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 0.3f, 1.5f + (currentCombo * 0.1f));
             debugLog("Combo in progress - played sound and sent message");
         } else {
@@ -579,7 +587,7 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("Applied finisher knockback: " + knockback);
 
             attacker.playSound(attacker.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 0.7f, 0.8f);
-            attacker.sendActionBar("§c§l AXE SLAM! §e(" + AXE_SLAM_TRUE_DAMAGE + " true damage)");
+            attacker.sendActionBar(ChatColor.RED + "" + ChatColor.BOLD + "AXE SLAM! " + ChatColor.YELLOW + "(" + AXE_SLAM_TRUE_DAMAGE + " true damage)");
             
             axeCombos.remove(attackerId);
             debugLog("Combo finisher complete - reset combo");
@@ -588,9 +596,7 @@ public class DCM extends JavaPlugin implements Listener {
         debugLog("=== handleAxeCombo() END ===");
     }
  
-    /**
-     * Handles bow drawing for dual wielding mechanics
-     */
+ 
     @EventHandler
     public void onBowDraw(PlayerInteractEvent event) {
         debugLog("=== onBowDraw() START ===");
@@ -626,9 +632,6 @@ public class DCM extends JavaPlugin implements Listener {
         debugLog("=== onBowDraw() END ===");
     }
  
-    /**
-     * Handles bow shooting for dual wielding mechanics
-     */
     @EventHandler
     public void onBowShoot(EntityShootBowEvent event) {
         debugLog("=== onBowShoot() START ===");
@@ -666,29 +669,32 @@ public class DCM extends JavaPlugin implements Listener {
 
             if (drawTime >= DUAL_BOW_CHARGE_TIME_MS) {
                 debugLog("Charge time sufficient - firing dual shot");
-                
-                Arrow mainArrow = (Arrow) event.getProjectile();
-                debugLog("Main arrow: " + mainArrow);
 
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        Arrow offArrow = player.getWorld().spawnArrow(
-                            player.getEyeLocation(),
-                            player.getLocation().getDirection(),
-                            (float) mainArrow.getVelocity().length(),
-                            5.0f
-                        );
-                        
-                        offArrow.setShooter(player);
-                        offArrow.setPickupStatus(AbstractArrow.PickupStatus.CREATIVE_ONLY);
-                        offArrow.setCritical(mainArrow.isCritical());
-                        debugLog("Spawned offhand arrow with velocity: " + offArrow.getVelocity().length());
-                        player.playSound(player.getLocation(), Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.3f);
-                        player.sendActionBar("§b§lDUAL SHOT!");
-                        debugLog("Dual shot effects played");
-                    }
-                }.runTaskLater(this, 1L);
+                if (!(event.getProjectile() instanceof AbstractArrow mainArrow)) {
+                    debugLog("Projectile is not an arrow, skipping dual shot");
+                } else {
+                    debugLog("Main arrow: " + mainArrow);
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            Arrow offArrow = player.getWorld().spawnArrow(
+                                player.getEyeLocation(),
+                                player.getLocation().getDirection(),
+                                (float) mainArrow.getVelocity().length(),
+                                5.0f
+                            );
+                            
+                            offArrow.setShooter(player);
+                            offArrow.setPickupStatus(AbstractArrow.PickupStatus.CREATIVE_ONLY);
+                            offArrow.setCritical(mainArrow.isCritical());
+                            debugLog("Spawned offhand arrow with velocity: " + offArrow.getVelocity().length());
+                            player.playSound(player.getLocation(), Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.3f);
+                            sendActionBar(player, ChatColor.AQUA, ChatColor.BOLD, "DUAL SHOT!");
+                            debugLog("Dual shot effects played");
+                        }
+                    }.runTaskLater(this, 1L);
+                }
             } else {
                 debugLog("Insufficient charge time - single shot only");
             }
@@ -700,9 +706,7 @@ public class DCM extends JavaPlugin implements Listener {
         debugLog("=== onBowShoot() END ===");
     }
  
-    /**
-     * Handles sword and shield parry mechanics
-     */
+   
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
         debugLog("=== onPlayerInteract() START ===");
@@ -743,7 +747,7 @@ public class DCM extends JavaPlugin implements Listener {
                 
                 if (now < cooldown) {
                     long remaining = (cooldown - now) / 1000;
-                    player.sendActionBar("§7Guard on cooldown (" + remaining + "s)");
+                    player.sendActionBar(ChatColor.GRAY + "Guard on cooldown (" + remaining + "s)");
                     debugLog("Guard on cooldown, " + remaining + "s remaining");
                 } else {
                     long guardExpire = now + MACE_GUARD_WINDOW_MS;
@@ -794,10 +798,10 @@ public class DCM extends JavaPlugin implements Listener {
                     debugLog("Parry cooldown set until: " + (now + SWORD_PARRY_COOLDOWN_MS));
                 
                     player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 1.8f);
-                    player.sendActionBar("§a§l⚔ PARRY! §e(Riposte ready for 1.5s)");
+                    player.sendActionBar(ChatColor.GREEN + "" + ChatColor.BOLD + "PARRY! " + ChatColor.YELLOW + "(Riposte ready for 1.5s)");
                 } else {
                     long remaining = (parryCooldown - now) / 1000;
-                    player.sendActionBar("§7Parry on cooldown (" + remaining + "s)");
+                    player.sendActionBar(ChatColor.GRAY + "Parry on cooldown (" + remaining + "s)");
                     debugLog("Parry on cooldown, " + remaining + "s remaining");
                 }
             }
@@ -850,7 +854,7 @@ public class DCM extends JavaPlugin implements Listener {
                             ));
                             
                             if (target instanceof Player targetPlayer) {
-                                targetPlayer.sendActionBar("§7§lSTUNNED!");
+                                targetPlayer.sendActionBar(ChatColor.GRAY + "" + ChatColor.BOLD + "STUNNED!");
                                 debugLog("Sent stun message to player target");
                             }
                         });
@@ -859,10 +863,10 @@ public class DCM extends JavaPlugin implements Listener {
                     debugLog("Shield parry cooldown set until: " + (now + SHIELD_PARRY_COOLDOWN_MS));
                     player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 0.5f);
                     player.playSound(player.getLocation(), Sound.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, 1.0f, 0.7f);
-                    player.sendActionBar("§b§l🛡 SHIELD PARRY! §e(Nearby enemies stunned)");
+                    player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "SHIELD PARRY! " + ChatColor.YELLOW + "(Nearby enemies stunned)");
                 } else {
                     long remaining = (parryCooldown - now) / 1000;
-                    player.sendActionBar("§7Shield parry on cooldown (" + remaining + "s)");
+                    player.sendActionBar(ChatColor.GRAY + "Shield parry on cooldown (" + remaining + "s)");
                     debugLog("Shield parry on cooldown, " + remaining + "s remaining");
                 }
             }
@@ -919,7 +923,7 @@ public class DCM extends JavaPlugin implements Listener {
                     executeDash(player, playerId, now);
                 } else {
                     long remaining = (cooldown - now) / 1000;
-                    player.sendActionBar("§7Dash on cooldown (" + remaining + "s)");
+                    player.sendActionBar(ChatColor.GRAY + "Dash on cooldown (" + remaining + "s)");
                     debugLog("Dash on cooldown, " + remaining + "s remaining");
                 }
                 
@@ -962,7 +966,7 @@ public class DCM extends JavaPlugin implements Listener {
         // ===========================
         CombatFX.playDashEffects(player);
         player.playSound(player.getLocation(), Sound.ENTITY_ENDER_DRAGON_FLAP, 0.5f, 1.5f);
-        player.sendActionBar("§b DASH! (§6-Energy§b)");
+        player.sendActionBar(ChatColor.AQUA + "DASH! (" + ChatColor.GOLD + "-Energy" + ChatColor.AQUA + ")");
         debugLog("Played dash effects and sounds");
  
         // ===========================
@@ -996,7 +1000,6 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("=== onAnyDamage() END ===");
             return;
         }
-
         UUID victimId = victim.getUniqueId();
         debugLog("Victim: " + victim.getName() + " (" + victimId + ")");
         debugLog("Damage: " + event.getDamage() + ", Final damage: " + event.getFinalDamage());
@@ -1020,16 +1023,24 @@ public class DCM extends JavaPlugin implements Listener {
             }.runTaskLater(DCM.this, 1L);
         }
  
-        // Calculate post-damage health
-        double finalHealth = victim.getHealth() - event.getFinalDamage();
+        handleAdrenalineIfNeeded(victim, now, event.getFinalDamage());
+        
+        debugLog("=== onAnyDamage() END ===");
+    }
+
+    private void handleAdrenalineIfNeeded(Player victim, long now, double incomingDamage) {
+        UUID victimId = victim.getUniqueId();
+
+    
+        double finalHealth = victim.getHealth() - incomingDamage;
         debugLog("Current health: " + victim.getHealth() + ", Final health after damage: " + finalHealth);
- 
+
         if (finalHealth > 0 && finalHealth <= ADRENALINE_HEALTH_THRESHOLD) {
             debugLog("Health below adrenaline threshold (" + ADRENALINE_HEALTH_THRESHOLD + ")");
-            
+
             long cd = adrenalineCooldowns.getOrDefault(victimId, 0L);
             debugLog("Adrenaline cooldown expires at: " + cd);
-            
+
             if (now >= cd) {
                 triggerAdrenaline(victim, now);
             } else {
@@ -1037,8 +1048,6 @@ public class DCM extends JavaPlugin implements Listener {
                 debugLog("Adrenaline on cooldown, " + remaining + "s remaining");
             }
         }
-        
-        debugLog("=== onAnyDamage() END ===");
     }
 
     private void triggerAdrenaline(Player victim, long now) {
@@ -1054,7 +1063,7 @@ public class DCM extends JavaPlugin implements Listener {
         debugLog("Applied Strength I for " + ADRENALINE_DURATION_TICKS + " ticks");
  
         CombatFX.playAdrenalineEffects(victim);
-        victim.sendActionBar("§c§lADRENALINE RUSH!");
+        victim.sendActionBar(ChatColor.RED + "" + ChatColor.BOLD + "ADRENALINE RUSH!");
         debugLog("Played adrenaline effects");
  
         adrenalineCooldowns.put(victim.getUniqueId(), now + ADRENALINE_COOLDOWN_MS);
@@ -1082,7 +1091,7 @@ public class DCM extends JavaPlugin implements Listener {
         Player player = getServer().getPlayer(playerId);
         if (player != null) {
             player.getWorld().playSound(player.getLocation(), Sound.ITEM_SHIELD_BREAK, 1.0f, 0.8f);
-            player.sendActionBar("§c§l🛡 SHIELD BROKEN! (" + String.format("%.1f", durationMs / 1000.0) + "s)");
+            player.sendActionBar(ChatColor.RED + "" + ChatColor.BOLD + "SHIELD BROKEN! (" + String.format("%.1f", durationMs / 1000.0) + "s)");
             
             int cooldownTicks = (int) (durationMs / 50);
             player.setCooldown(Material.SHIELD, cooldownTicks);
@@ -1185,7 +1194,7 @@ public class DCM extends JavaPlugin implements Listener {
 
                 if (expireAt == null || now >= expireAt) {
                     if (expireAt != null) {
-                        player.sendActionBar("§6Standing Guard! §e(0.0s remaining)");
+                        player.sendActionBar(ChatColor.GOLD + "Standing Guard! " + ChatColor.YELLOW + "(0.0s remaining)");
                         debugLog("Guard expired naturally");
                     }
                     maceGuardTimes.remove(playerId);
@@ -1200,13 +1209,13 @@ public class DCM extends JavaPlugin implements Listener {
                     debugLog("Mace no longer equipped, cancelling guard");
                     maceGuardTimes.remove(playerId);
                     maceGuardCountdownTasks.remove(playerId);
-                    player.sendActionBar("§7Guard cancelled.");
+                    player.sendActionBar(ChatColor.GRAY + "Guard cancelled.");
                     cancel();
                     return;
                 }
 
                 double secondsLeft = (expireAt - now) / 1000.0;
-                player.sendActionBar("§6Standing Guard! §e(" + String.format("%.1f", secondsLeft) + "s remaining)");
+                player.sendActionBar(ChatColor.GOLD + "Standing Guard! " + ChatColor.YELLOW + "(" + String.format("%.1f", secondsLeft) + "s remaining)");
             }
         };
 
