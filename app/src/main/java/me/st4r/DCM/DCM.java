@@ -1,5 +1,6 @@
 package me.st4r.DCM;
  
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
@@ -148,6 +149,12 @@ public class DCM extends JavaPlugin implements Listener {
     // ===========================
     private boolean floodgateAvailable = false;
     private boolean dvplus = false;
+    
+    // ===========================
+    // STAMINA MANAGER
+    // ===========================
+    private StaminaManager staminaManager;
+   
 
     // ===========================
     // DEBUG HELPER METHOD
@@ -189,13 +196,28 @@ public class DCM extends JavaPlugin implements Listener {
         
         startMemoryCleanupTask();
         debugLog("Memory cleanup task started");
-        
+       
+        staminaManager = new StaminaManager(this);
+        StaminaListener staminaListener = new StaminaListener(staminaManager);
+        getServer().getPluginManager().registerEvents(staminaListener, this);
+
         getLogger().info("-----------------------------------------------------------------------");
         getLogger().info("DCM (Dams's Combat Mechanics) v" + getDescription().getVersion() + " has been enabled!");
         getLogger().info("DEBUG MODE: " + (debug ? "ENABLED" : "DISABLED"));
         getLogger().info("Have fun and Good Luck!");
         getLogger().info("-----------------------------------------------------------------------");
         
+
+
+    new BukkitRunnable() {
+        @Override
+        public void run(){
+            for (Player p : Bukkit.getOnlinePlayers()){
+                staminaManager.regenTick(p, 3.0);
+            }
+        }
+    }.runTaskTimer(this, 0L, 10L);
+
         debugLog("=== onEnable() END ===");
     }
  
@@ -461,6 +483,7 @@ if (victim instanceof Player victimPlayer) {
             sendActionBar(attacker, ChatColor.RED, ChatColor.BOLD, "RIPOSTE! (" + String.format("%.1f", riposteDamage) + " damage)");
             
             riposteWindows.remove(attackerId);
+            staminaManager.drain(attacker,20);
             debugLog("Riposte window consumed");
         }
 
@@ -601,7 +624,7 @@ if (victim instanceof Player victimPlayer) {
         int currentCombo = axeCombos.getOrDefault(attackerId, 0) + 1;
         axeCombos.put(attackerId, currentCombo);
         axeComboTimestamps.put(attackerId, now);
-        
+        staminaManager.drain(attacker, 5);
         debugLog("Combo count: " + currentCombo + "/" + AXE_COMBO_MAX);
 
         if (currentCombo < AXE_COMBO_MAX) {
@@ -614,6 +637,7 @@ if (victim instanceof Player victimPlayer) {
             double baseDamage = event.getDamage();
             double slamDamage = baseDamage + AXE_SLAM_BONUS_DAMAGE;
             event.setDamage(slamDamage);
+            staminaManager.drain(attacker, 10);
             debugLog("Applied axe slam bonus damage: base " + baseDamage + " + " + AXE_SLAM_BONUS_DAMAGE + " = " + slamDamage);
             
             Vector knockback = victim.getLocation().toVector()
@@ -729,6 +753,7 @@ if (victim instanceof Player victimPlayer) {
                             debugLog("Spawned offhand arrow with velocity: " + offArrow.getVelocity().length());
                             player.playSound(player.getLocation(), Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.3f);
                             sendActionBar(player, ChatColor.AQUA, ChatColor.BOLD, "DUAL SHOT!");
+                            staminaManager.drain(player, 15);
                             debugLog("Dual shot effects played");
                         }
                     }.runTaskLater(this, 1L);
@@ -790,6 +815,7 @@ if (victim instanceof Player victimPlayer) {
                 } else {
                     long guardExpire = now + MACE_GUARD_WINDOW_MS;
                     maceGuardTimes.put(playerId, guardExpire);
+                   staminaManager.drain(player, 10);
                     maceGuardCooldowns.put(playerId, now + MACE_GUARD_COOLDOWN_MS);
                     
                     debugLog("Guard activated until: " + guardExpire);
@@ -830,6 +856,7 @@ if (victim instanceof Player victimPlayer) {
                     debugLog("SWORD PARRY SUCCESSFUL");
                     
                     riposteWindows.put(playerId, now + RIPOSTE_WINDOW_MS);
+                    staminaManager.drain(player, 15);
                     swordParryCooldowns.put(playerId, now + SWORD_PARRY_COOLDOWN_MS);
                     
                     debugLog("Riposte window set until: " + (now + RIPOSTE_WINDOW_MS));
@@ -898,6 +925,7 @@ if (victim instanceof Player victimPlayer) {
                         });
 
                     shieldParryCooldowns.put(playerId, now + SHIELD_PARRY_COOLDOWN_MS);
+                    staminaManager.drain(player, 15);
                     debugLog("Shield parry cooldown set until: " + (now + SHIELD_PARRY_COOLDOWN_MS));
                     player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 0.5f);
                     player.playSound(player.getLocation(), Sound.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, 1.0f, 0.7f);
