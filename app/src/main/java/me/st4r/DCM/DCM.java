@@ -139,6 +139,7 @@ public class DCM extends JavaPlugin implements Listener {
     // OPTIONAL DEPENDENCY FLAGS
     // ===========================
     private boolean floodgateAvailable = false;
+    private boolean dvplus = false;
 
     // ===========================
     // DEBUG HELPER METHOD
@@ -164,6 +165,16 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("Floodgate not found - Bedrock support disabled");
             getLogger().warning("Floodgate not found! Bedrock player support is disabled. Install Floodgate + Geyser for Bedrock compatibility.");
         }
+
+        //This is for future integrations. DO NOT REMOVE!!!
+        if (getServer().getPluginManager().getPlugin("DVPlus") != null){
+        dvplus = true;
+        debugLog("Dams's Vanilla+ Detected.");
+        getLogger().info("Dams's Vanilla+ Detected!");
+        } else {
+            getLogger().warning("Dams's Vanilla+ Not found.");
+        }
+
 
         getServer().getPluginManager().registerEvents(this, this);
         debugLog("Event listeners registered");

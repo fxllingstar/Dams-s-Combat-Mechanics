@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.yourname'
-version = '2.0.7-SNAPSHOT'
+version = '2.1.0-26.1.2'
 
 repositories {
     mavenCentral()
@@ -13,11 +13,12 @@ repositories {
 }
 dependencies {
 
-compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
-compileOnly("org.geysermc.floodgate:api:2.2.0-SNAPSHOT")
+compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
+compileOnly("org.geysermc.floodgate:api:2.2.5-SNAPSHOT")
+
 }
 
-def targetJavaVersion = 21
+def targetJavaVersion = 25
 java {
     def javaVersion = JavaVersion.toVersion(targetJavaVersion)
     sourceCompatibility = javaVersion
