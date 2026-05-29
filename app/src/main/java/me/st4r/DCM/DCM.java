@@ -1,6 +1,8 @@
 package me.st4r.DCM;
  
 import org.bukkit.ChatColor;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.enchantments.Enchantment;
@@ -12,13 +14,16 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityKnockbackEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -27,6 +32,7 @@ import org.bukkit.util.Vector;
 import org.geysermc.floodgate.api.FloodgateApi;
  
 import java.util.HashMap;
+import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
  
@@ -56,6 +62,8 @@ public class DCM extends JavaPlugin implements Listener {
     private static final long MACE_GUARD_WINDOW_MS = 1500;
     private static final double MACE_GUARD_DAMAGE_MULTIPLIER = 0.6;
     private static final long MACE_GUARD_COOLDOWN_MS = 5000;
+    private static final double DUAL_WIELD_OFFHAND_DAMAGE_SCALE = 0.05;
+    private static final double MELEE_EXHAUSTION_DAMAGE_MULTIPLIER = 0.4;
 
  
     // ===========================
@@ -76,7 +84,7 @@ public class DCM extends JavaPlugin implements Listener {
     // AXE COMBO CONFIGURATION
     // ===========================
     private static final int AXE_COMBO_MAX = 4;
-    private static final double AXE_SLAM_TRUE_DAMAGE = 6.0; 
+    private static final double AXE_SLAM_BONUS_DAMAGE = 6.0; 
     private static final long AXE_COMBO_TIMEOUT_MS = 8000;
  
     // ===========================
@@ -376,17 +384,17 @@ public class DCM extends JavaPlugin implements Listener {
         long now = System.currentTimeMillis();
         debugLog("Current timestamp: " + now);
 
+        UUID victimId = null;
 
         Long invulnExpire = invulnerablePlayers.get(attackerId);
         if (invulnExpire != null && now <= invulnExpire) {
-            debugLog("Attacker is invulnerable from dash, allowing attack");
         }
 
         // ===========================
         // VICTIM INVULNERABILITY CHECK
         // ===========================
         if (victim instanceof Player victimPlayer) {
-            UUID victimId = victimPlayer.getUniqueId();
+            victimId = victimPlayer.getUniqueId();
             debugLog("Victim is a player: " + victimPlayer.getName() + " (" + victimId + ")");
             
             Long victimInvulnExpire = invulnerablePlayers.get(victimId);
@@ -397,30 +405,42 @@ public class DCM extends JavaPlugin implements Listener {
                 return;
             }
             
-            // ===========================
-            // MACE GUARD CHECK
-            // ===========================
-            Long guardExpire = maceGuardTimes.get(victimId);
-            if (guardExpire != null && now <= guardExpire) {
-                double originalDamage = event.getDamage();
-                double reducedDamage = originalDamage * MACE_GUARD_DAMAGE_MULTIPLIER;
-                event.setDamage(reducedDamage);
-                debugLog("Mace guard active - damage reduced from " + originalDamage + " to " + reducedDamage);
-                
-                final Player guardedVictim = victimPlayer;
-                new BukkitRunnable() {
-                    @Override 
-                    public void run() { 
-                        guardedVictim.setVelocity(new Vector(0, 0, 0));
-                        debugLog("Nullified knockback for guarded player");
-                    }
-                }.runTaskLater(DCM.this, 1L); //Yea just run it some day today LMAOOOOO 
-            }
         }
 
         ItemStack weapon = attacker.getInventory().getItemInMainHand();
         Material weaponType = weapon.getType();
         debugLog("Weapon type: " + weaponType);
+
+
+        // ===========================
+// SWORD PARRY CHECK
+// ===========================
+if (victim instanceof Player victimPlayer) {
+    ItemStack victimMainHand = victimPlayer.getInventory().getItemInMainHand();
+
+    if (victimMainHand.getType().name().endsWith("_SWORD")) {
+        long lastBlock = lastBlockTimes.getOrDefault(victimId, 0L);
+        long timeSinceBlock = now - lastBlock;
+
+        boolean isBedrockPlayer = floodgateAvailable && FloodgateApi.getInstance().isFloodgatePlayer(victimId);
+        long parryWindow = isBedrockPlayer ? SWORD_PARRY_WINDOW_BEDROCK_MS : SWORD_PARRY_WINDOW_MS;
+
+        if (timeSinceBlock <= parryWindow) {
+            long parryCooldown = swordParryCooldowns.getOrDefault(victimId, 0L);
+            if (now >= parryCooldown) {
+                event.setCancelled(true); // negate the hit
+                riposteWindows.put(victimId, now + RIPOSTE_WINDOW_MS);
+                swordParryCooldowns.put(victimId, now + SWORD_PARRY_COOLDOWN_MS);
+                victimPlayer.playSound(victimPlayer.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 1.8f);
+                victimPlayer.sendActionBar(ChatColor.GREEN + "" + ChatColor.BOLD + "PARRY! " + ChatColor.YELLOW + "(Riposte ready for 1.5s)");
+                debugLog("Sword parry successful for " + victimPlayer.getName());
+            } else {
+                long remaining = (parryCooldown - now) / 1000;
+                victimPlayer.sendActionBar(ChatColor.GRAY + "Parry on cooldown (" + remaining + "s)");
+            }
+        }
+    }
+}
 
         // ===========================
         // RIPOSTE DAMAGE MULTIPLIER
@@ -442,6 +462,17 @@ public class DCM extends JavaPlugin implements Listener {
             
             riposteWindows.remove(attackerId);
             debugLog("Riposte window consumed");
+        }
+
+        Long guardExpire = null;
+        if (victimId != null) {
+            guardExpire = maceGuardTimes.get(victimId);
+        }
+        if (guardExpire != null && now <= guardExpire) {
+            double originalDamage = event.getDamage();
+            double reducedDamage = originalDamage * MACE_GUARD_DAMAGE_MULTIPLIER;
+            event.setDamage(reducedDamage);
+            debugLog("Mace guard active - damage reduced from " + originalDamage + " to " + reducedDamage);
         }
 
         // ===========================
@@ -468,58 +499,54 @@ public class DCM extends JavaPlugin implements Listener {
 
         debugLog("Mainhand is weapon: " + isMainhandWeapon + ", Offhand is weapon: " + isOffhandWeapon);
 
-        if (isMainhandWeapon && isOffhandWeapon) {
-            long cooldown = meleeCooldowns.getOrDefault(attackerId, 0L);
-            debugLog("Dual wield detected - cooldown expires at: " + cooldown);
-            
-            if (now < cooldown) {
-                long remaining = (cooldown - now) / 1000;
-                debugLog("Dual wield on cooldown - " + remaining + "s remaining");
-                
-                long lastMsgTime = lastExhaustionMsgTimes.getOrDefault(attackerId, 0L);
-                if (now - lastMsgTime >= 1000) {
-                    sendActionBar(attacker, ChatColor.GRAY, ChatColor.BOLD, "Exhausted... (wait " + remaining + "s)");
-                    lastExhaustionMsgTimes.put(attackerId, now);
-                    debugLog("Sent exhaustion message to player");
-                }
-                debugLog("=== onPlayerAttack() END ===");
-                return;
+        long cooldown = meleeCooldowns.getOrDefault(attackerId, 0L);
+        boolean meleeExhausted = now < cooldown;
+        if (meleeExhausted && isMainhandWeapon) {
+            long remaining = (cooldown - now) / 1000;
+            double originalDamage = event.getDamage();
+            double exhaustedDamage = originalDamage * MELEE_EXHAUSTION_DAMAGE_MULTIPLIER;
+            event.setDamage(exhaustedDamage);
+            debugLog("Melee exhausted - damage reduced from " + originalDamage + " to " + exhaustedDamage);
+
+            long lastMsgTime = lastExhaustionMsgTimes.getOrDefault(attackerId, 0L);
+            if (now - lastMsgTime >= 1000) {
+                sendActionBar(attacker, ChatColor.GRAY, ChatColor.BOLD, "Exhausted... (wait " + remaining + "s)");
+                lastExhaustionMsgTimes.put(attackerId, now);
+                debugLog("Sent exhaustion message to player");
             }
+        }
 
-            double mainDamage = getBaseDamage(weaponType);
-            double offDamage = getBaseDamage(offhandType);
-            double totalDamage = mainDamage + offDamage;
-            
-            debugLog("Calculating dual wield damage:");
-            debugLog("  Main weapon damage: " + mainDamage);
-            debugLog("  Off weapon damage: " + offDamage);
-            debugLog("  Total damage: " + totalDamage);
+        if (isMainhandWeapon && isOffhandWeapon) {
+            debugLog("Dual wield detected - cooldown expires at: " + cooldown);
 
-            int sharpnessMain = weapon.getEnchantmentLevel(Enchantment.SHARPNESS);
-            int sharpnessOff = offhand.getEnchantmentLevel(Enchantment.SHARPNESS);
-            double sharpnessBonus = (sharpnessMain + sharpnessOff) * 0.5;
-            totalDamage += sharpnessBonus;
-            
-            debugLog("Sharpness bonus: " + sharpnessBonus + " (total damage now: " + totalDamage + ")");
+            if (!meleeExhausted) {
+                double baseDamage = event.getDamage();
+                double offhandDamage = getWeaponAttackDamage(offhand);
+                double dualWieldMultiplier = 1.0 + (offhandDamage * DUAL_WIELD_OFFHAND_DAMAGE_SCALE);
+                double totalDamage = baseDamage * dualWieldMultiplier;
 
-            event.setDamage(totalDamage);
-            
+                debugLog("Calculating dual wield damage:");
+                debugLog("  Vanilla base damage: " + baseDamage);
+                debugLog("  Offhand attack damage: " + offhandDamage);
+                debugLog("  Dual wield multiplier: " + dualWieldMultiplier);
+                debugLog("  Total damage: " + totalDamage);
 
-            attacker.playSound(attacker.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.2f);
-            sendActionBar(attacker, ChatColor.GOLD, ChatColor.BOLD, "DUAL STRIKE! (" + String.format("%.1f", totalDamage) + " damage)");
-            debugLog("Applied dual wield strike with total damage: " + totalDamage);
+                event.setDamage(totalDamage);
 
-            meleeCooldowns.put(attackerId, now + DUAL_MELEE_COOLDOWN_MS);
-            debugLog("Set dual wield cooldown until: " + (now + DUAL_MELEE_COOLDOWN_MS));
+                attacker.playSound(attacker.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.2f);
+                sendActionBar(attacker, ChatColor.GOLD, ChatColor.BOLD, "DUAL STRIKE! (" + String.format("%.1f", totalDamage) + " damage)");
+                debugLog("Applied dual wield strike with total damage: " + totalDamage);
+
+                meleeCooldowns.put(attackerId, now + DUAL_MELEE_COOLDOWN_MS);
+                debugLog("Set dual wield cooldown until: " + (now + DUAL_MELEE_COOLDOWN_MS));
+            }
         }
 
         // ===========================
         // SHIELD HIT STREAK TRACKING
         // ===========================
         if (victim instanceof Player victimPlayer) {
-            UUID victimId = victimPlayer.getUniqueId();
-            
-            if (victimPlayer.isBlocking()) {
+            if (victimPlayer.isBlocking() && !isShieldBroken(victimId)) {
                 debugLog("Victim is blocking with shield");
                 
                 UUID lastTarget = lastTargets.get(attackerId);
@@ -547,13 +574,12 @@ public class DCM extends JavaPlugin implements Listener {
                 lastTargets.put(attackerId, victimId);
                 shieldStreakTimestamps.put(attackerId, now);
                 debugLog("Updated last target and streak timestamp");
+            } else if (isShieldBroken(victimId)) {
+                debugLog("Victim shield is broken, skipping shield streak tracking");
+                shieldHitStreak.remove(attackerId);
             }
         }
 
-        if (victim instanceof Player victimPlayer) {
-            handleAdrenalineIfNeeded(victimPlayer, now, event.getFinalDamage());
-        }
-        
         debugLog("=== onPlayerAttack() END ===");
     }
 
@@ -585,9 +611,10 @@ public class DCM extends JavaPlugin implements Listener {
         } else {
             debugLog("COMBO FINISHER ACTIVATED");
             
-            event.setDamage(0);
-            victim.damage(AXE_SLAM_TRUE_DAMAGE);
-            debugLog("Applied true damage: " + AXE_SLAM_TRUE_DAMAGE);
+            double baseDamage = event.getDamage();
+            double slamDamage = baseDamage + AXE_SLAM_BONUS_DAMAGE;
+            event.setDamage(slamDamage);
+            debugLog("Applied axe slam bonus damage: base " + baseDamage + " + " + AXE_SLAM_BONUS_DAMAGE + " = " + slamDamage);
             
             Vector knockback = victim.getLocation().toVector()
                     .subtract(attacker.getLocation().toVector())
@@ -598,7 +625,7 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("Applied finisher knockback: " + knockback);
 
             attacker.playSound(attacker.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 0.7f, 0.8f);
-            attacker.sendActionBar(ChatColor.RED + "" + ChatColor.BOLD + "AXE SLAM! " + ChatColor.YELLOW + "(" + AXE_SLAM_TRUE_DAMAGE + " true damage)");
+            attacker.sendActionBar(ChatColor.RED + "" + ChatColor.BOLD + "AXE SLAM! " + ChatColor.YELLOW + "(+" + AXE_SLAM_BONUS_DAMAGE + " bonus damage)");
             
             axeCombos.remove(attackerId);
             debugLog("Combo finisher complete - reset combo");
@@ -993,7 +1020,7 @@ public class DCM extends JavaPlugin implements Listener {
     // ===============================================
  
    @EventHandler(priority = EventPriority.HIGH)
-    public void onAnyDamage(org.bukkit.event.entity.EntityDamageEvent event) {
+    public void onAnyDamage(EntityDamageEvent event) {
         debugLog("=== onAnyDamage() START ===");
         
         if (event.isCancelled()) {
@@ -1006,37 +1033,38 @@ public class DCM extends JavaPlugin implements Listener {
             debugLog("=== onAnyDamage() END ===");
             return;
         }
-        if (event instanceof EntityDamageByEntityEvent) {
-            debugLog("Entity damage by entity event, handled separately");
-            debugLog("=== onAnyDamage() END ===");
-            return;
-        }
         UUID victimId = victim.getUniqueId();
         debugLog("Victim: " + victim.getName() + " (" + victimId + ")");
         debugLog("Damage: " + event.getDamage() + ", Final damage: " + event.getFinalDamage());
 
-        Long guardExpire = maceGuardTimes.get(victimId);
         long now = System.currentTimeMillis();
-        
-        if (guardExpire != null && now <= guardExpire) {
-            double originalDamage = event.getDamage();
-            double reducedDamage = originalDamage * MACE_GUARD_DAMAGE_MULTIPLIER;
-            event.setDamage(reducedDamage);
-            debugLog("Mace guard active - damage reduced from " + originalDamage + " to " + reducedDamage);
-            
-            final Player guardedVictim = victim;
-            new BukkitRunnable() {
-                @Override 
-                public void run() { 
-                    guardedVictim.setVelocity(new Vector(0, 0, 0));
-                    debugLog("Nullified knockback for guarded player");
-                }
-            }.runTaskLater(DCM.this, 1L);
-        }
- 
-        handleAdrenalineIfNeeded(victim, now, event.getFinalDamage());
+
+        handleVictimDamageReactions(victim, event, now);
         
         debugLog("=== onAnyDamage() END ===");
+    }
+
+    private void handleVictimDamageReactions(Player victim, EntityDamageEvent event, long now) {
+        UUID victimId = victim.getUniqueId();
+        handleAdrenalineIfNeeded(victim, now, event.getFinalDamage());
+    }
+    
+    @SuppressWarnings("removal")
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onVictimKnockback(EntityKnockbackEvent event) {
+        if (!(event.getEntity() instanceof Player victim)) {
+            return;
+        }
+
+        UUID victimId = victim.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long guardExpire = maceGuardTimes.get(victimId);
+        if (guardExpire == null || now > guardExpire) {
+            return;
+        }
+
+        event.setCancelled(true);
+        debugLog("Cancelled knockback for guarded player " + victim.getName());
     }
 
     private void handleAdrenalineIfNeeded(Player victim, long now, double incomingDamage) {
@@ -1241,31 +1269,75 @@ public class DCM extends JavaPlugin implements Listener {
     // ===============================================
  
     /**
-     * Gets the base damage value for a weapon material
-     * @param material The weapon material
-     * @return Base damage value
+     * Reads weapon attack damage from item attributes first, then falls back to a
+     * vanilla-style material lookup if the item does not expose an attack damage modifier.
      */
-    private double getBaseDamage(Material material) {
-        debugLog("=== getBaseDamage() START === Material: " + material);
-        
+    private double getWeaponAttackDamage(ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            debugLog("getWeaponAttackDamage() -> empty hand");
+            return 0.0;
+        }
+
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            Collection<AttributeModifier> modifiers = meta.getAttributeModifiers(Attribute.ATTACK_DAMAGE);
+            if (modifiers != null && !modifiers.isEmpty()) {
+                double damage = 0.0;
+                for (AttributeModifier modifier : modifiers) {
+                    damage += modifier.getAmount();
+                }
+                damage += getWeaponEnchantmentDamageBonus(item);
+                debugLog("getWeaponAttackDamage() -> attribute damage: " + damage + " for " + item.getType());
+                return damage;
+            }
+        }
+
+        double fallbackDamage = getFallbackWeaponDamage(item.getType());
+        fallbackDamage += getWeaponEnchantmentDamageBonus(item);
+        debugLog("getWeaponAttackDamage() -> fallback damage: " + fallbackDamage + " for " + item.getType());
+        return fallbackDamage;
+    }
+
+    private double getWeaponEnchantmentDamageBonus(ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            return 0.0;
+        }
+
+        int sharpness = item.getEnchantmentLevel(Enchantment.SHARPNESS);
+        int smite = item.getEnchantmentLevel(Enchantment.SMITE);
+        int bane = item.getEnchantmentLevel(Enchantment.BANE_OF_ARTHROPODS);
+
+        double bonus = 0.0;
+        if (sharpness > 0) {
+            bonus = Math.max(bonus, 0.5 * sharpness + 0.5);
+        }
+        if (smite > 0) {
+            bonus = Math.max(bonus, 2.5 * smite);
+        }
+        if (bane > 0) {
+            bonus = Math.max(bonus, 2.5 * bane);
+        }
+
+        return bonus;
+    }
+
+    private double getFallbackWeaponDamage(Material material) {
         String name = material.name();
-        double damage = 1.0;
-        
+
         if (name.endsWith("_SWORD")) {
-            if (name.startsWith("WOODEN") || name.startsWith("GOLDEN")) damage = 4.0;
-            else if (name.startsWith("STONE")) damage = 5.0;
-            else if (name.startsWith("IRON")) damage = 6.0;
-            else if (name.startsWith("DIAMOND")) damage = 7.0;
-            else if (name.startsWith("NETHERITE")) damage = 8.0;
+            if (name.startsWith("WOODEN") || name.startsWith("GOLDEN")) return 4.0;
+            if (name.startsWith("STONE")) return 5.0;
+            if (name.startsWith("IRON")) return 6.0;
+            if (name.startsWith("DIAMOND")) return 7.0;
+            if (name.startsWith("NETHERITE")) return 8.0;
+        } else if (name.endsWith("_AXE")) {
+            if (name.startsWith("WOODEN") || name.startsWith("GOLDEN")) return 7.0;
+            if (name.startsWith("STONE") || name.startsWith("IRON") || name.startsWith("DIAMOND")) return 9.0;
+            if (name.startsWith("NETHERITE")) return 10.0;
+        } else if (material == Material.MACE) {
+            return 7.0;
         }
-        else if (name.endsWith("_AXE")) {
-            if (name.startsWith("WOODEN") || name.startsWith("GOLDEN")) damage = 7.0;
-            else if (name.startsWith("STONE") || name.startsWith("IRON") || name.startsWith("DIAMOND")) damage = 9.0;
-            else if (name.startsWith("NETHERITE")) damage = 10.0;
-        }
-        
-        debugLog("Calculated base damage: " + damage);
-        debugLog("=== getBaseDamage() END ===");
-        return damage;
+
+        return 1.0;
     }
 }
