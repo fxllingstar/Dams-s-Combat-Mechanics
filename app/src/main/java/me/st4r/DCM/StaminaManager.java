@@ -23,7 +23,7 @@ public class StaminaManager {
     private final Set<UUID> waveMode = new HashSet<>();
 
     private static final double MAX_STAMINA = 100.0;
-    private static final int FADE_DELAY_TICKS = 40; // 2 seconds after full regen
+    private static final int FADE_DELAY_TICKS = 40;
 
     public StaminaManager(Plugin plugin) {
         this.plugin = plugin;
@@ -32,17 +32,14 @@ public class StaminaManager {
     public void initPlayer(Player player) {
         BossBar bar = Bukkit.createBossBar("§e⚡ Stamina", BarColor.GREEN, BarStyle.SOLID);
         bar.setProgress(1.0);
-        // Don't add player yet — starts hidden
         stamBars.put(player.getUniqueId(), bar);
         stamina.put(player.getUniqueId(), MAX_STAMINA);
     }
 
-    // --- Stamina drain (called by combat logic) ---
+    // --- Stamina drain ---
 
     public void drain(Player player, double amount) {
         UUID id = player.getUniqueId();
-
-        // Cancel any pending fade — stamina is moving again
         cancelFade(id);
 
         double current = Math.max(0, stamina.getOrDefault(id, MAX_STAMINA) - amount);
@@ -51,16 +48,16 @@ public class StaminaManager {
         if (!waveMode.contains(id)) {
             showBossBar(player, current);
         }
-        // waveMode players always get action bar update via the regen loop
+       
     }
 
-    // --- Regen tick (called by your scheduler every 0.5s) ---
+    // --- Regen tick  ---
 
     public void regenTick(Player player, double amount) {
         UUID id = player.getUniqueId();
         double current = stamina.getOrDefault(id, MAX_STAMINA);
 
-        if (current >= MAX_STAMINA) return; // nothing to do
+        if (current >= MAX_STAMINA) return; 
 
         double newVal = Math.min(MAX_STAMINA, current + amount);
         stamina.put(id, newVal);
@@ -69,8 +66,6 @@ public class StaminaManager {
             updateActionBar(player, newVal);
         } else {
             updateBossBar(player, newVal);
-
-            // If we just hit full, start the fade timer
             if (newVal >= MAX_STAMINA) {
                 scheduleFade(player);
             }
@@ -82,7 +77,7 @@ public class StaminaManager {
     private void showBossBar(Player player, double current) {
         BossBar bar = stamBars.get(player.getUniqueId());
         if (bar == null) return;
-        bar.addPlayer(player); // safe to call even if already added
+        bar.addPlayer(player); 
         updateBossBarVisuals(bar, current);
     }
 
@@ -142,12 +137,10 @@ public class StaminaManager {
         UUID id = player.getUniqueId();
         waveMode.add(id);
 
-        // Hide the boss bar — action bar takes over
+    
         cancelFade(id);
         BossBar bar = stamBars.get(id);
         if (bar != null) bar.removePlayer(player);
-
-        // Show initial action bar state
         updateActionBar(player, stamina.getOrDefault(id, MAX_STAMINA));
     }
 
@@ -158,10 +151,8 @@ public class StaminaManager {
         double current = stamina.getOrDefault(id, MAX_STAMINA);
 
         if (current < MAX_STAMINA) {
-            // Stamina still draining — show boss bar again
             showBossBar(player, current);
         }
-        // If full, stays hidden — no need to show anything
     }
 
     // --- Cleanup ---
