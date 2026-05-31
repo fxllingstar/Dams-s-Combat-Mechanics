@@ -11,6 +11,8 @@ import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Arrow;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -20,8 +22,8 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityKnockbackEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerToggleSneakEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -118,6 +120,7 @@ public class DCM extends JavaPlugin implements Listener {
     // ===========================
     private final Map<UUID, Long> lastSwingTimes = new HashMap<>();
     private final Map<UUID, Long> lastBlockTimes = new HashMap<>();
+    private final Map<UUID, Long> parryInputCooldowns = new HashMap<>();
     private final Map<UUID, Long> swordParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> shieldParryCooldowns = new HashMap<>();
     private final Map<UUID, Long> brokenShields = new HashMap<>();
@@ -135,9 +138,14 @@ public class DCM extends JavaPlugin implements Listener {
     // ===========================
     // DASH STATE
     // ===========================
-    private final Map<UUID, Boolean> dashEnabled = new HashMap<>();
+    private final Map<UUID, Boolean> dashToggleStates = new HashMap<>();
     private final Map<UUID, Long> dashCooldowns = new HashMap<>();
     private final Map<UUID, Long> invulnerablePlayers = new HashMap<>();
+
+    // ===========================
+    // UI STATE
+    // ===========================
+    private final Map<UUID, BukkitRunnable> blockingIndicatorTasks = new HashMap<>();
  
     // ===========================
     // ADRENALINE STATE
@@ -193,6 +201,13 @@ public class DCM extends JavaPlugin implements Listener {
 
         getServer().getPluginManager().registerEvents(this, this);
         debugLog("Event listeners registered");
+
+        if (getCommand("dash") != null) {
+            getCommand("dash").setExecutor(this);
+            debugLog("Dash command executor registered");
+        } else {
+            getLogger().warning("Dash command is missing from plugin.yml");
+        }
         
         startMemoryCleanupTask();
         debugLog("Memory cleanup task started");
@@ -231,6 +246,11 @@ public class DCM extends JavaPlugin implements Listener {
         }
         maceGuardCountdownTasks.clear();
 
+        for (BukkitRunnable task : blockingIndicatorTasks.values()) {
+            task.cancel();
+        }
+        blockingIndicatorTasks.clear();
+
         getLogger().severe("Oh.. server is dead?");
         getLogger().info("DCM has been disabled! :>");
         getLogger().info("0x6B696E646E657373 <3");
@@ -265,6 +285,12 @@ public class DCM extends JavaPlugin implements Listener {
                 removed = beforeSize - lastBlockTimes.size();
                 cleanedCount += removed;
                 debugLog("Cleaned " + removed + " stale lastBlockTimes entries");
+
+                beforeSize = parryInputCooldowns.size();
+                parryInputCooldowns.entrySet().removeIf(entry -> entry.getValue() < now);
+                removed = beforeSize - parryInputCooldowns.size();
+                cleanedCount += removed;
+                debugLog("Cleaned " + removed + " expired parryInputCooldowns");
 
                 beforeSize = shieldStreakTimestamps.size();
                 shieldStreakTimestamps.entrySet().removeIf(entry -> entry.getValue() < staleTime);
@@ -358,6 +384,7 @@ public class DCM extends JavaPlugin implements Listener {
         lastExhaustionMsgTimes.remove(playerId);
         lastSwingTimes.remove(playerId);
         lastBlockTimes.remove(playerId);
+        parryInputCooldowns.remove(playerId);
         swordParryCooldowns.remove(playerId);
         shieldParryCooldowns.remove(playerId);
         brokenShields.remove(playerId);
@@ -366,13 +393,41 @@ public class DCM extends JavaPlugin implements Listener {
         riposteWindows.remove(playerId);
         axeCombos.remove(playerId);
         axeComboTimestamps.remove(playerId);
-        dashEnabled.remove(playerId);
+        dashToggleStates.remove(playerId);
         dashCooldowns.remove(playerId);
         invulnerablePlayers.remove(playerId);
         adrenalineCooldowns.remove(playerId);
+        stopBlockingIndicator(playerId);
         
         debugLog("All state cleaned for player " + event.getPlayer().getName());
         debugLog("=== onPlayerQuit() END ===");
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!command.getName().equalsIgnoreCase("dash")) {
+            return false;
+        }
+
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("Only players can use /dash.");
+            return true;
+        }
+
+        UUID playerId = player.getUniqueId();
+        boolean enabled = dashToggleStates.getOrDefault(playerId, true);
+        boolean nextState = !enabled;
+        dashToggleStates.put(playerId, nextState);
+
+        if (nextState) {
+            player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "Dash enabled");
+            player.sendMessage(ChatColor.GREEN + "Dash has been enabled.");
+        } else {
+            player.sendActionBar(ChatColor.GRAY + "" + ChatColor.BOLD + "Dash disabled");
+            player.sendMessage(ChatColor.RED + "Dash has been disabled.");
+        }
+
+        return true;
     }
  
     /**
@@ -786,6 +841,8 @@ if (victim instanceof Player victimPlayer) {
 
         Action action = event.getAction();
         debugLog("Action: " + action);
+        boolean rightClick = action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK;
+        boolean leftClick = action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK;
 
         long now = System.currentTimeMillis();
 
@@ -831,109 +888,105 @@ if (victim instanceof Player victimPlayer) {
         // ===========================
         // SWORD PARRY
         // ===========================
-        if (mainHand.getType().name().endsWith("_SWORD") && 
-            (action == Action.LEFT_CLICK_AIR || action == Action.LEFT_CLICK_BLOCK)) {
-            
-            debugLog("Sword swing detected");
-            lastSwingTimes.put(playerId, now);
-            debugLog("Updated last swing time to: " + now);
-            
-            long lastBlock = lastBlockTimes.getOrDefault(playerId, 0L);
-            long timeSinceBlock = now - lastBlock;
-            
-            debugLog("Time since last block: " + timeSinceBlock + "ms");
+        if (mainHand.getType().name().endsWith("_SWORD") && rightClick) {
+            debugLog("Sword parry input detected");
 
-            boolean isBedrockPlayer = floodgateAvailable && FloodgateApi.getInstance().isFloodgatePlayer(playerId);
-            long parryWindow = isBedrockPlayer ? SWORD_PARRY_WINDOW_BEDROCK_MS : SWORD_PARRY_WINDOW_MS;
-            
-            debugLog("Player is " + (isBedrockPlayer ? "Bedrock" : "Java") + ", parry window: " + parryWindow + "ms");
+            long parryCooldown = parryInputCooldowns.getOrDefault(playerId, 0L);
+            debugLog("Parry input cooldown expires at: " + parryCooldown);
 
-            if (timeSinceBlock <= parryWindow) {
-                long parryCooldown = swordParryCooldowns.getOrDefault(playerId, 0L);
-                debugLog("Parry cooldown expires at: " + parryCooldown);
-                
-                if (now >= parryCooldown) {
-                    debugLog("SWORD PARRY SUCCESSFUL");
-                    
-                    riposteWindows.put(playerId, now + RIPOSTE_WINDOW_MS);
-                    staminaManager.drain(player, 15);
-                    swordParryCooldowns.put(playerId, now + SWORD_PARRY_COOLDOWN_MS);
-                    
-                    debugLog("Riposte window set until: " + (now + RIPOSTE_WINDOW_MS));
-                    debugLog("Parry cooldown set until: " + (now + SWORD_PARRY_COOLDOWN_MS));
-                
-                    player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 1.8f);
-                    player.sendActionBar(ChatColor.GREEN + "" + ChatColor.BOLD + "PARRY! " + ChatColor.YELLOW + "(Riposte ready for 1.5s)");
-                } else {
-                    long remaining = (parryCooldown - now) / 1000;
-                    player.sendActionBar(ChatColor.GRAY + "Parry on cooldown (" + remaining + "s)");
-                    debugLog("Parry on cooldown, " + remaining + "s remaining");
-                }
+            if (now >= parryCooldown) {
+                lastBlockTimes.put(playerId, now);
+                parryInputCooldowns.put(playerId, now + SWORD_PARRY_COOLDOWN_MS);
+                debugLog("Recorded sword parry start time: " + now);
+                player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "PARRY!");
+                player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 0.9f, 1.6f);
+            } else {
+                long remaining = (parryCooldown - now) / 1000;
+                player.sendActionBar(ChatColor.GRAY + "Parry on cooldown (" + remaining + "s)");
+                debugLog("Parry on cooldown, " + remaining + "s remaining");
             }
         }
 
         // ===========================
         // SHIELD PARRY
         // ===========================
-        if (player.isBlocking() && 
-            (action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK)) {
+        if (player.getInventory().getItemInMainHand().getType() == Material.SHIELD ||
+            player.getInventory().getItemInOffHand().getType() == Material.SHIELD) {
+            if (!rightClick) {
+                debugLog("Shield held, but no right click input");
+            } else {
             
-            debugLog("Shield block detected");
-            
-            if (isShieldBroken(playerId)) {
-                debugLog("Shield is broken, block not registered");
-                debugLog("=== onPlayerInteract() END ===");
-                return;
-            }
-            
-            lastBlockTimes.put(playerId, now);
-            debugLog("Updated last block time to: " + now);
-            
-            long lastSwing = lastSwingTimes.getOrDefault(playerId, 0L);
-            long timeSinceSwing = now - lastSwing;
-            
-            debugLog("Time since last swing: " + timeSinceSwing + "ms");
+                debugLog("Shield block detected");
+                long inputCooldown = parryInputCooldowns.getOrDefault(playerId, 0L);
+                debugLog("Shield parry input cooldown expires at: " + inputCooldown);
 
-            if (timeSinceSwing <= SHIELD_PARRY_WINDOW_MS) {
-                long parryCooldown = shieldParryCooldowns.getOrDefault(playerId, 0L);
-                debugLog("Shield parry cooldown expires at: " + parryCooldown);
+                if (now < inputCooldown) {
+                    long remaining = (inputCooldown - now) / 1000;
+                    player.sendActionBar(ChatColor.GRAY + "Parry on cooldown (" + remaining + "s)");
+                    debugLog("Shield parry input on cooldown, " + remaining + "s remaining");
+                    debugLog("=== onPlayerInteract() END ===");
+                    return;
+                }
+                parryInputCooldowns.put(playerId, now + SHIELD_PARRY_COOLDOWN_MS);
+                player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "PARRY!");
+            
+                if (isShieldBroken(playerId)) {
+                    debugLog("Shield is broken, block not registered");
+                    stopBlockingIndicator(playerId);
+                    debugLog("=== onPlayerInteract() END ===");
+                    return;
+                }
+            
+                lastBlockTimes.put(playerId, now);
+                debugLog("Updated last block time to: " + now);
+                startBlockingIndicator(player);
+            
+                long lastSwing = lastSwingTimes.getOrDefault(playerId, 0L);
+                long timeSinceSwing = now - lastSwing;
+            
+                debugLog("Time since last swing: " + timeSinceSwing + "ms");
+
+                if (timeSinceSwing <= SHIELD_PARRY_WINDOW_MS) {
+                    long parryCooldown = shieldParryCooldowns.getOrDefault(playerId, 0L);
+                    debugLog("Shield parry cooldown expires at: " + parryCooldown);
                 
-                if (now >= parryCooldown) {
-                    debugLog("SHIELD PARRY SUCCESSFUL");
+                    if (now >= parryCooldown) {
+                        debugLog("SHIELD PARRY SUCCESSFUL");
                     
-                    player.getNearbyEntities(3, 3, 3).stream()
-                        .filter(entity -> entity instanceof LivingEntity)
-                        .filter(entity -> entity != player)
-                        .map(entity -> (LivingEntity) entity)
-                        .forEach(target -> {
-                            debugLog("Stunning target: " + target.getName());
-                            target.addPotionEffect(new PotionEffect(
-                                PotionEffectType.SLOWNESS, 
-                                SHIELD_STUN_DURATION_TICKS, 
-                                3
-                            ));
-                            target.addPotionEffect(new PotionEffect(
-                                PotionEffectType.MINING_FATIGUE, 
-                                SHIELD_STUN_DURATION_TICKS, 
-                                2
-                            ));
+                        player.getNearbyEntities(3, 3, 3).stream()
+                            .filter(entity -> entity instanceof LivingEntity)
+                            .filter(entity -> entity != player)
+                            .map(entity -> (LivingEntity) entity)
+                            .forEach(target -> {
+                                debugLog("Stunning target: " + target.getName());
+                                target.addPotionEffect(new PotionEffect(
+                                    PotionEffectType.SLOWNESS, 
+                                    SHIELD_STUN_DURATION_TICKS, 
+                                    3
+                                ));
+                                target.addPotionEffect(new PotionEffect(
+                                    PotionEffectType.MINING_FATIGUE, 
+                                    SHIELD_STUN_DURATION_TICKS, 
+                                    2
+                                ));
                             
-                            if (target instanceof Player targetPlayer) {
-                                targetPlayer.sendActionBar(ChatColor.GRAY + "" + ChatColor.BOLD + "STUNNED!");
-                                debugLog("Sent stun message to player target");
-                            }
-                        });
+                                if (target instanceof Player targetPlayer) {
+                                    targetPlayer.sendActionBar(ChatColor.GRAY + "" + ChatColor.BOLD + "STUNNED!");
+                                    debugLog("Sent stun message to player target");
+                                }
+                            });
 
-                    shieldParryCooldowns.put(playerId, now + SHIELD_PARRY_COOLDOWN_MS);
-                    staminaManager.drain(player, 15);
-                    debugLog("Shield parry cooldown set until: " + (now + SHIELD_PARRY_COOLDOWN_MS));
-                    player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 0.5f);
-                    player.playSound(player.getLocation(), Sound.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, 1.0f, 0.7f);
-                    player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "SHIELD PARRY! " + ChatColor.YELLOW + "(Nearby enemies stunned)");
-                } else {
-                    long remaining = (parryCooldown - now) / 1000;
-                    player.sendActionBar(ChatColor.GRAY + "Shield parry on cooldown (" + remaining + "s)");
-                    debugLog("Shield parry on cooldown, " + remaining + "s remaining");
+                        shieldParryCooldowns.put(playerId, now + SHIELD_PARRY_COOLDOWN_MS);
+                        staminaManager.drain(player, 15);
+                        debugLog("Shield parry cooldown set until: " + (now + SHIELD_PARRY_COOLDOWN_MS));
+                        player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 0.5f);
+                        player.playSound(player.getLocation(), Sound.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, 1.0f, 0.7f);
+                        player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "SHIELD PARRY! " + ChatColor.YELLOW + "(Nearby enemies stunned)");
+                    } else {
+                        long remaining = (parryCooldown - now) / 1000;
+                        player.sendActionBar(ChatColor.GRAY + "Shield parry on cooldown (" + remaining + "s)");
+                        debugLog("Shield parry on cooldown, " + remaining + "s remaining");
+                    }
                 }
             }
         }
@@ -942,65 +995,50 @@ if (victim instanceof Player victimPlayer) {
     }
  
     /**
-     * Handles dash activation via double-tap drop key
+     * Handles dash activation when the player starts sneaking while sprinting.
      */
     @EventHandler
-    public void onItemHeldChange(PlayerItemHeldEvent event) {
-        debugLog("=== onItemHeldChange() START ===");
+    public void onPlayerToggleSneak(PlayerToggleSneakEvent event) {
+        debugLog("=== onPlayerToggleSneak() START ===");
         
+        if (!event.isSneaking()) {
+            debugLog("Sneak released, no dash attempt");
+            debugLog("=== onPlayerToggleSneak() END ===");
+            return;
+        }
+
         Player player = event.getPlayer();
         UUID playerId = player.getUniqueId();
         
         debugLog("Player: " + player.getName() + " (" + playerId + ")");
-        debugLog("Previous slot: " + event.getPreviousSlot() + ", New slot: " + event.getNewSlot());
+        debugLog("Sprinting: " + player.isSprinting());
 
-        int prev = event.getPreviousSlot();
-        int curr = event.getNewSlot();
+        if (!dashToggleStates.getOrDefault(playerId, true)) {
+            debugLog("Dash is disabled for this player");
+            player.sendActionBar(ChatColor.GRAY + "Dash is disabled. Use /dash to re-enable it.");
+            debugLog("=== onPlayerToggleSneak() END ===");
+            return;
+        }
 
-        if ((prev == 8 && curr == 0) || (prev == 0 && curr == 8)) {
-            debugLog("Detected hotbar wrap (0 <-> 8)");
-            
-            Boolean enabled = dashEnabled.get(playerId);
-            long now = System.currentTimeMillis();
-            
-            debugLog("Dash enabled state: " + enabled + ", Current time: " + now);
+        if (!player.isSprinting()) {
+            debugLog("Player is not sprinting, dash not triggered");
+            debugLog("=== onPlayerToggleSneak() END ===");
+            return;
+        }
 
-            if (enabled == null) {
-                dashEnabled.put(playerId, true);
-                debugLog("First wrap detected, dash primed");
-                
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        if (dashEnabled.get(playerId) != null && dashEnabled.get(playerId)) {
-                            dashEnabled.put(playerId, false);
-                            debugLog("Dash prime expired (timeout)");
-                        }
-                    }
-                }.runTaskLater(this, 10L);
-                
-            } else if (enabled) {
-                debugLog("Second wrap detected - attempting dash activation");
-                
-                long cooldown = dashCooldowns.getOrDefault(playerId, 0L);
-                debugLog("Dash cooldown expires at: " + cooldown);
-                
-                if (now >= cooldown) {
-                    executeDash(player, playerId, now);
-                } else {
-                    long remaining = (cooldown - now) / 1000;
-                    player.sendActionBar(ChatColor.GRAY + "Dash on cooldown (" + remaining + "s)");
-                    debugLog("Dash on cooldown, " + remaining + "s remaining");
-                }
-                
-                dashEnabled.put(playerId, false);
-                debugLog("Reset dash enabled state");
-            }
+        long now = System.currentTimeMillis();
+        long cooldown = dashCooldowns.getOrDefault(playerId, 0L);
+        debugLog("Dash cooldown expires at: " + cooldown);
+
+        if (now >= cooldown) {
+            executeDash(player, playerId, now);
         } else {
-            debugLog("Normal slot change, no dash logic");
+            long remaining = (cooldown - now) / 1000;
+            player.sendActionBar(ChatColor.GRAY + "Dash on cooldown (" + remaining + "s)");
+            debugLog("Dash on cooldown, " + remaining + "s remaining");
         }
         
-        debugLog("=== onItemHeldChange() END ===");
+        debugLog("=== onPlayerToggleSneak() END ===");
     }
  
     /**
@@ -1041,6 +1079,38 @@ if (victim instanceof Player victimPlayer) {
         dashCooldowns.put(id, now + DASH_COOLDOWN_MS);
         debugLog("Set dash cooldown until: " + (now + DASH_COOLDOWN_MS));
         debugLog("=== executeDash() END ===");
+    }
+
+    private void startBlockingIndicator(Player player) {
+        UUID playerId = player.getUniqueId();
+        BukkitRunnable existing = blockingIndicatorTasks.remove(playerId);
+        if (existing != null) {
+            existing.cancel();
+        }
+
+        BukkitRunnable task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!player.isOnline() || !player.isBlocking() || isShieldBroken(playerId)) {
+                    stopBlockingIndicator(playerId);
+                    cancel();
+                    return;
+                }
+
+                player.sendActionBar(ChatColor.BLUE + "" + ChatColor.BOLD + "BLOCKING");
+            }
+        };
+
+        blockingIndicatorTasks.put(playerId, task);
+        task.runTaskTimer(this, 0L, 10L);
+        player.sendActionBar(ChatColor.BLUE + "" + ChatColor.BOLD + "BLOCKING");
+    }
+
+    private void stopBlockingIndicator(UUID playerId) {
+        BukkitRunnable task = blockingIndicatorTasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
     }
  
     // ===============================================
