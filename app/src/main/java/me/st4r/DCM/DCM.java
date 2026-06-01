@@ -170,6 +170,14 @@ public class DCM extends JavaPlugin implements Listener {
         player.sendActionBar(color + "" + style + message);
     }
 
+    private boolean spendStamina(Player player, double amount, String failMessage) {
+        if (!staminaManager.trySpend(player, amount)) {
+            player.sendActionBar(ChatColor.RED + failMessage);
+            return false;
+        }
+        return true;
+    }
+
     @Override
     public void onEnable() {
         
@@ -468,19 +476,20 @@ if (victim instanceof Player victimPlayer) {
         // ===========================
         Long riposteExpire = riposteWindows.get(attackerId);
         if (riposteExpire != null && now <= riposteExpire) {
-            double originalDamage = event.getDamage();
-            double riposteDamage = originalDamage * RIPOSTE_DAMAGE_MULTIPLIER;
-            event.setDamage(riposteDamage);
-            
-            Vector direction = victim.getLocation().toVector().subtract(attacker.getLocation().toVector()).normalize();
-            direction.multiply(RIPOSTE_KNOCKBACK_HORIZONTAL).setY(RIPOSTE_KNOCKBACK_VERTICAL);
-            victim.setVelocity(direction);
-            
-            attacker.playSound(attacker.getLocation(), Sound.ITEM_TRIDENT_HIT, 1.0f, 1.5f);
-            sendActionBar(attacker, ChatColor.RED, ChatColor.BOLD, "RIPOSTE! (" + String.format("%.1f", riposteDamage) + " damage)");
-            
-            riposteWindows.remove(attackerId);
-            staminaManager.drain(attacker,20);
+            if (spendStamina(attacker, 20, "Not enough stamina for riposte!")) {
+                double originalDamage = event.getDamage();
+                double riposteDamage = originalDamage * RIPOSTE_DAMAGE_MULTIPLIER;
+                event.setDamage(riposteDamage);
+                
+                Vector direction = victim.getLocation().toVector().subtract(attacker.getLocation().toVector()).normalize();
+                direction.multiply(RIPOSTE_KNOCKBACK_HORIZONTAL).setY(RIPOSTE_KNOCKBACK_VERTICAL);
+                victim.setVelocity(direction);
+                
+                attacker.playSound(attacker.getLocation(), Sound.ITEM_TRIDENT_HIT, 1.0f, 1.5f);
+                sendActionBar(attacker, ChatColor.RED, ChatColor.BOLD, "RIPOSTE! (" + String.format("%.1f", riposteDamage) + " damage)");
+                
+                riposteWindows.remove(attackerId);
+            }
         }
 
         Long guardExpire = null;
@@ -531,17 +540,19 @@ if (victim instanceof Player victimPlayer) {
         if (isMainhandWeapon && isOffhandWeapon) {
 
             if (!meleeExhausted) {
-                double baseDamage = event.getDamage();
-                double offhandDamage = getWeaponAttackDamage(offhand);
-                double dualWieldMultiplier = 1.0 + (offhandDamage * DUAL_WIELD_OFFHAND_DAMAGE_SCALE);
-                double totalDamage = baseDamage * dualWieldMultiplier;
+                if (spendStamina(attacker, 10, "Not enough stamina for dual strike!")) {
+                    double baseDamage = event.getDamage();
+                    double offhandDamage = getWeaponAttackDamage(offhand);
+                    double dualWieldMultiplier = 1.0 + (offhandDamage * DUAL_WIELD_OFFHAND_DAMAGE_SCALE);
+                    double totalDamage = baseDamage * dualWieldMultiplier;
 
-                event.setDamage(totalDamage);
+                    event.setDamage(totalDamage);
 
-                attacker.playSound(attacker.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.2f);
-                sendActionBar(attacker, ChatColor.GOLD, ChatColor.BOLD, "DUAL STRIKE! (" + String.format("%.1f", totalDamage) + " damage)");
+                    attacker.playSound(attacker.getLocation(), Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1.0f, 1.2f);
+                    sendActionBar(attacker, ChatColor.GOLD, ChatColor.BOLD, "DUAL STRIKE! (" + String.format("%.1f", totalDamage) + " damage)");
 
-                meleeCooldowns.put(attackerId, now + DUAL_MELEE_COOLDOWN_MS);
+                    meleeCooldowns.put(attackerId, now + DUAL_MELEE_COOLDOWN_MS);
+                }
             }
         }
 
@@ -587,9 +598,14 @@ if (victim instanceof Player victimPlayer) {
         }
 
         int currentCombo = axeCombos.getOrDefault(attackerId, 0) + 1;
+        double staminaCost = currentCombo < AXE_COMBO_MAX ? 5 : 15;
+
+        if (!spendStamina(attacker, staminaCost, "Not enough stamina for axe combo!")) {
+            return;
+        }
+
         axeCombos.put(attackerId, currentCombo);
         axeComboTimestamps.put(attackerId, now);
-        staminaManager.drain(attacker, 5);
 
         if (currentCombo < AXE_COMBO_MAX) {
             attacker.sendActionBar(ChatColor.GOLD + "" + ChatColor.BOLD + "Axe Combo: " + ChatColor.YELLOW + currentCombo + "/" + AXE_COMBO_MAX);
@@ -599,7 +615,6 @@ if (victim instanceof Player victimPlayer) {
             double baseDamage = event.getDamage();
             double slamDamage = baseDamage + AXE_SLAM_BONUS_DAMAGE;
             event.setDamage(slamDamage);
-            staminaManager.drain(attacker, 10);
             
             Vector knockback = victim.getLocation().toVector()
                     .subtract(attacker.getLocation().toVector())
@@ -666,6 +681,10 @@ if (victim instanceof Player victimPlayer) {
             long drawTime = now - drawStart;
 
             if (drawTime >= DUAL_BOW_CHARGE_TIME_MS) {
+                if (!spendStamina(player, 10, "Not enough stamina for dual shot!")) {
+                    bowDrawStarts.remove(playerId);
+                    return;
+                }
 
                 if (!(event.getProjectile() instanceof AbstractArrow mainArrow)) {
                 } else {
@@ -685,7 +704,6 @@ if (victim instanceof Player victimPlayer) {
                             offArrow.setCritical(mainArrow.isCritical());
                             player.playSound(player.getLocation(), Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.3f);
                             sendActionBar(player, ChatColor.AQUA, ChatColor.BOLD, "DUAL SHOT!");
-                            staminaManager.drain(player, 15);
                         }
                     }.runTaskLater(this, 1L);
                 }
@@ -730,13 +748,14 @@ if (victim instanceof Player victimPlayer) {
                     long remaining = (cooldown - now) / 1000;
                     player.sendActionBar(ChatColor.GRAY + "Guard on cooldown (" + remaining + "s)");
                 } else {
-                    long guardExpire = now + MACE_GUARD_WINDOW_MS;
-                    maceGuardTimes.put(playerId, guardExpire);
-                   staminaManager.drain(player, 10);
-                    maceGuardCooldowns.put(playerId, now + MACE_GUARD_COOLDOWN_MS);
-                    
-                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_PLACE, 0.8f, 1.2f);
-                    startMaceGuardCountdown(player, playerId);
+                    if (spendStamina(player, 10, "Not enough stamina for mace guard!")) {
+                        long guardExpire = now + MACE_GUARD_WINDOW_MS;
+                        maceGuardTimes.put(playerId, guardExpire);
+                        maceGuardCooldowns.put(playerId, now + MACE_GUARD_COOLDOWN_MS);
+                        
+                        player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_PLACE, 0.8f, 1.2f);
+                        startMaceGuardCountdown(player, playerId);
+                    }
                 }
             }
         }
@@ -773,6 +792,10 @@ if (victim instanceof Player victimPlayer) {
                     player.sendActionBar(ChatColor.GRAY + "Parry on cooldown (" + remaining + "s)");
                     return;
                 }
+                if (!spendStamina(player, 15, "Not enough stamina for shield parry!")) {
+                    return;
+                }
+
                 parryInputCooldowns.put(playerId, now + SHIELD_PARRY_COOLDOWN_MS);
                 player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "PARRY!");
             
@@ -814,7 +837,6 @@ if (victim instanceof Player victimPlayer) {
                             });
 
                         shieldParryCooldowns.put(playerId, now + SHIELD_PARRY_COOLDOWN_MS);
-                        staminaManager.drain(player, 15);
                         player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 0.5f);
                         player.playSound(player.getLocation(), Sound.ENTITY_ZOMBIE_ATTACK_IRON_DOOR, 1.0f, 0.7f);
                         player.sendActionBar(ChatColor.AQUA + "" + ChatColor.BOLD + "SHIELD PARRY! " + ChatColor.YELLOW + "(Nearby enemies stunned)");

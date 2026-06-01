@@ -173,4 +173,13 @@ public class StaminaManager {
     public boolean hasStamina(Player player, double required) {
         return getStamina(player) >= required;
     }
+
+    public boolean trySpend(Player player, double amount) {
+        if (!hasStamina(player, amount)) {
+            return false;
+        }
+
+        drain(player, amount);
+        return true;
+    }
 }
