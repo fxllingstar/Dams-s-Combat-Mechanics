@@ -45,7 +45,7 @@ import java.util.UUID;
  * combo systems, and mobility enhancements.
  * 
  * @author st4r
- * @version 2.0.6
+ * @version 2.1.2
  */
 public class DCM extends JavaPlugin implements Listener {
  
