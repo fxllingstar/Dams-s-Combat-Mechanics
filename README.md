@@ -95,8 +95,8 @@ This `2.0` branch is a full redesign of the plugin systems and combat flow.
 
 ##  Technical Details
 
-- **Server Software**: Paper API `io.papermc.paper:paper-api:26.1.2.build.+`.
-- **Java Version**: Java **25** target/toolchain.
+- **Server Software**: Paper API `io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT`.
+- **Java Version**: Java **21** target/toolchain.
 - **Optional Dependency**: Floodgate `org.geysermc.floodgate:api:2.2.5-SNAPSHOT` for Bedrock player detection and parry-window adaptation.
 - **Bedrock Handling**: If Floodgate is missing, plugin remains functional and logs a warning, but Bedrock-specific timing adjustments are disabled.
 - **CombatFX Module**: Centralized particle/sound effect handling for parry, dash, riposte, and adrenaline.
