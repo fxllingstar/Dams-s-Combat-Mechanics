@@ -1,7 +1,7 @@
 name: DCM
 version: '${version}'
 main: me.st4r.DCM.DCM
-api-version: '26.1.2'
+api-version: '1.21.11'
 description: "Dams's Combat Mechanics - dual wielding, parry, axe combos, dash, adrenaline rush"
 author: st4r
 
