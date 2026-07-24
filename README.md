@@ -2,7 +2,7 @@
 
 **Dams's Combat Mechanics (DCM)** is a full combat overhaul plugin for Paper 1.21.11 servers. It expands vanilla combat with timing-based defense, weapon synergy, high-impact combo systems, mobility tools, and passive clutch mechanics.
 
-This `2.0` branch is a full redesign of the plugin systems and combat flow.
+This `3.0` branch is a full redesign of the plugin systems and combat flow.
 
 ---
 
@@ -27,14 +27,6 @@ This `2.0` branch is a full redesign of the plugin systems and combat flow.
 - At **4 consecutive shield hits**, the target shield is disabled for **5 seconds**.
 - Streak resets on target swap, timeout, or when the target stops blocking.
 - Shield disable is enforced with vanilla-style cooldown + block prevention.
-
-### Dual-Bow Archery
-- Holding **two bows** enables charged double-shot behavior.
-- Requires **2.0s draw time** in non-creative modes.
-- On release:
-- First arrow damage is doubled.
-- A second arrow is launched with slight spread and matching boosted damage.
-- Includes draw-time validation and cancellation if requirements are not met.
 
 ### Parry System
 - **Sword Parry**: Right-click timing with sword before impact to negate incoming damage.
@@ -121,11 +113,11 @@ This `2.0` branch is a full redesign of the plugin systems and combat flow.
 
 ## License
 
-This plugin is licensed under the APGL-v3 LICENSE, if you fork this repository and build your own version, you MUST follow the license file.
+This plugin is licensed under the GPL-v3 LICENSE, if you fork this repository and build your own version, you MUST follow the license file.
 
 ---
 
 ## Author
 
-Developed by **Dams/st4r/star, whatever is easier and you recognize me with lmao :>**.
-Co-developed by **TheSandrone**
+Developed by **chio/star, whatever is easier and you recognize me with lmao :>**.
+Co-developed by **TheSandrone and Claude**

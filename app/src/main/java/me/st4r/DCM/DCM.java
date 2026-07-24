@@ -1,26 +1,28 @@
 package me.st4r.DCM;
  
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.Material;
 import org.bukkit.Sound;
-import org.bukkit.enchantments.Enchantment;
-import org.bukkit.entity.AbstractArrow;
-import org.bukkit.entity.Arrow;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityKnockbackEvent;
-import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
@@ -34,19 +36,16 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 import org.geysermc.floodgate.api.FloodgateApi;
  
-import java.util.HashMap;
-import java.util.Collection;
-import java.util.Map;
-import java.util.UUID;
- 
 /**
  * DCM - Dams's Combat Mechanics
  * A comprehensive combat overhaul plugin combining dual-wielding, parry mechanics,
  * combo systems, and mobility enhancements.
  * 
  * @author st4r
- * @version 2.1.2
+ * @version 2.1.2 >>3.0.0<<
  */
+
+@SuppressWarnings("deprecation")
 public class DCM extends JavaPlugin implements Listener {
  
     private boolean debug = false;
@@ -55,7 +54,6 @@ public class DCM extends JavaPlugin implements Listener {
     // WEAPON CONFIGURATION
     // ===========================
     private static final long DUAL_MELEE_COOLDOWN_MS = 3000;
-    private static final long DUAL_BOW_CHARGE_TIME_MS = 1000;
     private static final int SHIELD_BREAK_THRESHOLD = 4;
     private static final long SHIELD_BREAK_DURATION_MS = 5000;
     private static final long SHIELD_STREAK_TIMEOUT_MS = 4000;
@@ -106,7 +104,6 @@ public class DCM extends JavaPlugin implements Listener {
     // DUAL WIELDING STATE
     // ===========================
     private final Map<UUID, Long> meleeCooldowns = new HashMap<>();
-    private final Map<UUID, Long> bowDrawStarts = new HashMap<>();
     private final Map<UUID, Integer> shieldHitStreak = new HashMap<>();
     private final Map<UUID, UUID> lastTargets = new HashMap<>();
     private final Map<UUID, Long> shieldStreakTimestamps = new HashMap<>();
@@ -188,6 +185,7 @@ public class DCM extends JavaPlugin implements Listener {
         }
 
         //This is for future integrations. DO NOT REMOVE!!!
+        //Update, forgot what this is for LOLLLL 
         if (getServer().getPluginManager().getPlugin("DVPlus") != null){
         dvplus = true;
         getLogger().info("Dams's Vanilla+ Detected!");
@@ -243,7 +241,7 @@ public class DCM extends JavaPlugin implements Listener {
         }
         blockingIndicatorTasks.clear();
 
-        getLogger().severe("Oh.. server is dead?");
+        getLogger().severe("Oh.. server is dead? Sad :(");
         getLogger().info("DCM has been disabled! :>");
         getLogger().info("0x6B696E646E657373 <3");
     }
@@ -347,7 +345,6 @@ public class DCM extends JavaPlugin implements Listener {
         
  
         meleeCooldowns.remove(playerId);
-        bowDrawStarts.remove(playerId);
         shieldHitStreak.remove(playerId);
         lastTargets.remove(playerId);
         shieldStreakTimestamps.remove(playerId);
@@ -492,16 +489,6 @@ if (victim instanceof Player victimPlayer) {
             }
         }
 
-        Long guardExpire = null;
-        if (victimId != null) {
-            guardExpire = maceGuardTimes.get(victimId);
-        }
-        if (guardExpire != null && now <= guardExpire) {
-            double originalDamage = event.getDamage();
-            double reducedDamage = originalDamage * MACE_GUARD_DAMAGE_MULTIPLIER;
-            event.setDamage(reducedDamage);
-        }
-
         // ===========================
         // AXE COMBO SYSTEM
         // ===========================
@@ -629,91 +616,6 @@ if (victim instanceof Player victimPlayer) {
             axeCombos.remove(attackerId);
         }
     }
- 
- 
-    @EventHandler
-    public void onBowDraw(PlayerInteractEvent event) {
-        
-        if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
-        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) {
-            return;
-        }
-
-        Player player = event.getPlayer();
-        UUID playerId = player.getUniqueId();
-
-        ItemStack mainHand = player.getInventory().getItemInMainHand();
-        ItemStack offHand = player.getInventory().getItemInOffHand();
-
-        if (mainHand.getType() == Material.BOW || mainHand.getType() == Material.CROSSBOW) {
-            if (offHand.getType() == Material.BOW || offHand.getType() == Material.CROSSBOW) {
-                long now = System.currentTimeMillis();
-                bowDrawStarts.put(playerId, now);
-            }
-        }
-    }
- 
-    @EventHandler
-    public void onBowShoot(EntityShootBowEvent event) {
-        
-        if (!(event.getEntity() instanceof Player player)) {
-            return;
-        }
-
-        UUID playerId = player.getUniqueId();
-
-        ItemStack mainHand = player.getInventory().getItemInMainHand();
-        ItemStack offHand = player.getInventory().getItemInOffHand();
-
-        boolean mainIsBow = mainHand.getType() == Material.BOW || mainHand.getType() == Material.CROSSBOW;
-        boolean offIsBow = offHand.getType() == Material.BOW || offHand.getType() == Material.CROSSBOW;
-
-        if (mainIsBow && offIsBow) {
-            
-            Long drawStart = bowDrawStarts.get(playerId);
-            if (drawStart == null) {
-                return;
-            }
-
-            long now = System.currentTimeMillis();
-            long drawTime = now - drawStart;
-
-            if (drawTime >= DUAL_BOW_CHARGE_TIME_MS) {
-                if (!spendStamina(player, 10, "Not enough stamina for dual shot!")) {
-                    bowDrawStarts.remove(playerId);
-                    return;
-                }
-
-                if (!(event.getProjectile() instanceof AbstractArrow mainArrow)) {
-                } else {
-
-                    new BukkitRunnable() {
-                        @Override
-                        public void run() {
-                            Arrow offArrow = player.getWorld().spawnArrow(
-                                player.getEyeLocation(),
-                                player.getLocation().getDirection(),
-                                (float) mainArrow.getVelocity().length(),
-                                5.0f
-                            );
-                            
-                            offArrow.setShooter(player);
-                            offArrow.setPickupStatus(AbstractArrow.PickupStatus.CREATIVE_ONLY);
-                            offArrow.setCritical(mainArrow.isCritical());
-                            player.playSound(player.getLocation(), Sound.ENTITY_ARROW_SHOOT, 1.0f, 1.3f);
-                            sendActionBar(player, ChatColor.AQUA, ChatColor.BOLD, "DUAL SHOT!");
-                        }
-                    }.runTaskLater(this, 1L);
-                }
-            } else {
-            }
-
-            bowDrawStarts.remove(playerId);
-        }
-    }
- 
    
     @EventHandler
     public void onPlayerInteract(PlayerInteractEvent event) {
@@ -959,7 +861,23 @@ if (victim instanceof Player victimPlayer) {
 
     private void handleVictimDamageReactions(Player victim, EntityDamageEvent event, long now) {
         UUID victimId = victim.getUniqueId();
+        applyMaceGuardDamageReduction(victimId, event, now);
         handleAdrenalineIfNeeded(victim, now, event.getFinalDamage());
+    }
+
+    private void applyMaceGuardDamageReduction(UUID victimId, EntityDamageEvent event, long now) {
+        if (!(event instanceof EntityDamageByEntityEvent)) {
+            return;
+        }
+
+        Long guardExpire = maceGuardTimes.get(victimId);
+        if (guardExpire == null || now > guardExpire) {
+            return;
+        }
+
+        double originalDamage = event.getDamage();
+        double reducedDamage = originalDamage * MACE_GUARD_DAMAGE_MULTIPLIER;
+        event.setDamage(reducedDamage);
     }
     
     @SuppressWarnings("removal")

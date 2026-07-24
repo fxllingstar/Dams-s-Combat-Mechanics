@@ -1,19 +1,19 @@
 package me.st4r.DCM;
 
-import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
-import org.bukkit.boss.BossBar;
-import org.bukkit.boss.BarColor;
-import org.bukkit.boss.BarStyle;
-import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
+import org.bukkit.Bukkit;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 public class StaminaManager {
 
     private final Plugin plugin;
@@ -30,7 +30,7 @@ public class StaminaManager {
     }
 
     public void initPlayer(Player player) {
-        BossBar bar = Bukkit.createBossBar("§e⚡ Stamina", BarColor.GREEN, BarStyle.SOLID);
+        BossBar bar = Bukkit.createBossBar("§e Stamina", BarColor.GREEN, BarStyle.SOLID);
         bar.setProgress(1.0);
         stamBars.put(player.getUniqueId(), bar);
         stamina.put(player.getUniqueId(), MAX_STAMINA);
@@ -93,13 +93,13 @@ public class StaminaManager {
 
         if (progress < 0.25) {
             bar.setColor(BarColor.RED);
-            bar.setTitle("§c⚡ Stamina");
+            bar.setTitle("§c Stamina");
         } else if (progress < 0.6) {
             bar.setColor(BarColor.YELLOW);
-            bar.setTitle("§e⚡ Stamina");
+            bar.setTitle("§e Stamina");
         } else {
             bar.setColor(BarColor.GREEN);
-            bar.setTitle("§a⚡ Stamina");
+            bar.setTitle("§a Stamina");
         }
     }
 
@@ -127,7 +127,7 @@ public class StaminaManager {
     private void updateActionBar(Player player, double current) {
         int filled = (int) Math.round((current / MAX_STAMINA) * 10);
         int empty = 10 - filled;
-        String bar = "§e⚡ " + "§a█".repeat(filled) + "§8░".repeat(empty);
+        String bar =  "§a█".repeat(filled) + "§8░".repeat(empty);
         player.sendActionBar(bar);
     }
 
