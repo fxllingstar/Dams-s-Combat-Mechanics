@@ -10,5 +10,5 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-rootProject.name = "Dams's Combat Mechanics"
+rootProject.name = "Ataraxia Combat Mechanics"
 include("app")
