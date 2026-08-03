@@ -1,4 +1,4 @@
-package me.st4r.DCM;
+package me.st4r.ACM;
  
 import java.util.Collection;
 import java.util.HashMap;
@@ -46,7 +46,7 @@ import org.geysermc.floodgate.api.FloodgateApi;
  */
 
 @SuppressWarnings("deprecation")
-public class DCM extends JavaPlugin implements Listener {
+public class ACM extends JavaPlugin implements Listener {
 
  
     // ===========================
