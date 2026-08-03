@@ -2,8 +2,6 @@
 
 **Dams's Combat Mechanics (DCM)** is a full combat overhaul plugin for Paper 1.21.11 servers. It expands vanilla combat with timing-based defense, weapon synergy, high-impact combo systems, mobility tools, and passive clutch mechanics.
 
-This `3.0` branch is a full redesign of the plugin systems and combat flow.
-
 ---
 
 ## Features & Abilities

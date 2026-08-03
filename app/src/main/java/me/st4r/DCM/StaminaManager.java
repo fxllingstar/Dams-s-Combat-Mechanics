@@ -1,9 +1,7 @@
 package me.st4r.DCM;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
@@ -14,13 +12,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+
+@SuppressWarnings("deprecation")
 public class StaminaManager {
 
     private final Plugin plugin;
-    private final Map<UUID, BossBar> stamBars = new HashMap<>();
-    private final Map<UUID, Double> stamina = new HashMap<>();
-    private final Map<UUID, BukkitTask> fadeTasks = new HashMap<>();
-    private final Set<UUID> waveMode = new HashSet<>();
+    private final Map<UUID, StaminaState> players = new HashMap<>();
 
     private static final double MAX_STAMINA = 100.0;
     private static final int FADE_DELAY_TICKS = 40;
@@ -29,45 +26,84 @@ public class StaminaManager {
         this.plugin = plugin;
     }
 
+    /**
+     * Holds all per-player stamina state in one place. Consolidating this
+     * (instead of 3 parallel maps + a set) means there's exactly one map
+     * entry to create and one to remove per player — no risk of cleaning
+     * up 3 out of 4 data structures and leaking the fourth.
+     */
+    private static class StaminaState {
+        final BossBar bar;
+        double value = MAX_STAMINA;
+        BukkitTask fadeTask;
+        boolean waveMode;
+
+        StaminaState(BossBar bar) {
+            this.bar = bar;
+        }
+    }
+
     public void initPlayer(Player player) {
-        BossBar bar = Bukkit.createBossBar("§e Stamina", BarColor.GREEN, BarStyle.SOLID);
-        bar.setProgress(1.0);
-        stamBars.put(player.getUniqueId(), bar);
-        stamina.put(player.getUniqueId(), MAX_STAMINA);
+        UUID id = player.getUniqueId();
+        StaminaState state = players.get(id);
+
+        if (state == null) {
+            // Fresh join: create the bar once.
+            BossBar bar = Bukkit.createBossBar("§e Stamina", BarColor.GREEN, BarStyle.SOLID);
+            state = new StaminaState(bar);
+            players.put(id, state);
+        } else {
+            // Re-init on an existing entry (e.g. plugin reload race, respawn
+            // hook, etc.) — reuse the bar instead of creating an orphan.
+            cancelFade(state);
+            state.bar.removeAll();
+        }
+
+        state.value = MAX_STAMINA;
+        state.waveMode = false;
+        state.bar.setProgress(1.0);
+        state.bar.setColor(BarColor.GREEN);
+        state.bar.setTitle("§e Stamina");
     }
 
     // --- Stamina drain ---
 
     public void drain(Player player, double amount) {
-        UUID id = player.getUniqueId();
-        cancelFade(id);
-
-        double current = Math.max(0, stamina.getOrDefault(id, MAX_STAMINA) - amount);
-        stamina.put(id, current);
-
-        if (!waveMode.contains(id)) {
-            showBossBar(player, current);
+        if (amount < 0) {
+            throw new IllegalArgumentException("drain amount must be non-negative: " + amount);
         }
-       
+
+        StaminaState state = players.get(player.getUniqueId());
+        if (state == null) return;
+
+        cancelFade(state);
+        state.value = Math.max(0, state.value - amount);
+
+        if (state.waveMode) {
+            updateActionBar(player, state.value);
+        } else {
+            showBossBar(player, state.value);
+        }
     }
 
-    // --- Regen tick  ---
+    // --- Regen tick ---
 
     public void regenTick(Player player, double amount) {
-        UUID id = player.getUniqueId();
-        double current = stamina.getOrDefault(id, MAX_STAMINA);
+        if (amount < 0) {
+            throw new IllegalArgumentException("regen amount must be non-negative: " + amount);
+        }
 
-        if (current >= MAX_STAMINA) return; 
+        StaminaState state = players.get(player.getUniqueId());
+        if (state == null || state.value >= MAX_STAMINA) return;
 
-        double newVal = Math.min(MAX_STAMINA, current + amount);
-        stamina.put(id, newVal);
+        state.value = Math.min(MAX_STAMINA, state.value + amount);
 
-        if (waveMode.contains(id)) {
-            updateActionBar(player, newVal);
+        if (state.waveMode) {
+            updateActionBar(player, state.value);
         } else {
-            updateBossBar(player, newVal);
-            if (newVal >= MAX_STAMINA) {
-                scheduleFade(player);
+            updateBossBarVisuals(state.bar, state.value);
+            if (state.value >= MAX_STAMINA) {
+                scheduleFade(player, state);
             }
         }
     }
@@ -75,16 +111,10 @@ public class StaminaManager {
     // --- Boss bar visibility ---
 
     private void showBossBar(Player player, double current) {
-        BossBar bar = stamBars.get(player.getUniqueId());
-        if (bar == null) return;
-        bar.addPlayer(player); 
-        updateBossBarVisuals(bar, current);
-    }
-
-    private void updateBossBar(Player player, double current) {
-        BossBar bar = stamBars.get(player.getUniqueId());
-        if (bar == null) return;
-        updateBossBarVisuals(bar, current);
+        StaminaState state = players.get(player.getUniqueId());
+        if (state == null) return;
+        state.bar.addPlayer(player);
+        updateBossBarVisuals(state.bar, current);
     }
 
     private void updateBossBarVisuals(BossBar bar, double current) {
@@ -103,23 +133,31 @@ public class StaminaManager {
         }
     }
 
-    private void scheduleFade(Player player) {
+    // --- Fade scheduling ---
+    // Looks the Player up fresh via Bukkit.getPlayer(id) at execution time
+    // instead of holding a Player reference in the closure. Bukkit Player
+    // objects aren't guaranteed valid after the tick they were captured on
+    // if the player disconnects in the meantime — this avoids that footgun.
+
+    private void scheduleFade(Player player, StaminaState state) {
         UUID id = player.getUniqueId();
         BukkitTask task = new BukkitRunnable() {
             @Override
             public void run() {
-                BossBar bar = stamBars.get(id);
-                if (bar != null) bar.removePlayer(player);
-                fadeTasks.remove(id);
+                Player p = Bukkit.getPlayer(id);
+                if (p != null) state.bar.removePlayer(p);
+                state.fadeTask = null;
             }
         }.runTaskLater(plugin, FADE_DELAY_TICKS);
 
-        fadeTasks.put(id, task);
+        state.fadeTask = task;
     }
 
-    private void cancelFade(UUID id) {
-        BukkitTask task = fadeTasks.remove(id);
-        if (task != null) task.cancel();
+    private void cancelFade(StaminaState state) {
+        if (state.fadeTask != null) {
+            state.fadeTask.cancel();
+            state.fadeTask = null;
+        }
     }
 
     // --- Action bar (wave mode) ---
@@ -127,47 +165,60 @@ public class StaminaManager {
     private void updateActionBar(Player player, double current) {
         int filled = (int) Math.round((current / MAX_STAMINA) * 10);
         int empty = 10 - filled;
-        String bar =  "§a█".repeat(filled) + "§8░".repeat(empty);
+        String bar = "§a█".repeat(filled) + "§8░".repeat(empty);
         player.sendActionBar(bar);
     }
 
     // --- Wave mode switching ---
 
     public void enterWaveMode(Player player) {
-        UUID id = player.getUniqueId();
-        waveMode.add(id);
+        StaminaState state = players.get(player.getUniqueId());
+        if (state == null) return;
 
-    
-        cancelFade(id);
-        BossBar bar = stamBars.get(id);
-        if (bar != null) bar.removePlayer(player);
-        updateActionBar(player, stamina.getOrDefault(id, MAX_STAMINA));
+        state.waveMode = true;
+        cancelFade(state);
+        state.bar.removePlayer(player);
+        updateActionBar(player, state.value);
     }
 
     public void exitWaveMode(Player player) {
-        UUID id = player.getUniqueId();
-        waveMode.remove(id);
+        StaminaState state = players.get(player.getUniqueId());
+        if (state == null) return;
 
-        double current = stamina.getOrDefault(id, MAX_STAMINA);
+        state.waveMode = false;
 
-        if (current < MAX_STAMINA) {
-            showBossBar(player, current);
+        if (state.value < MAX_STAMINA) {
+            showBossBar(player, state.value);
         }
     }
 
     // --- Cleanup ---
 
     public void removePlayer(Player player) {
-        UUID id = player.getUniqueId();
-        cancelFade(id);
-        BossBar bar = stamBars.remove(id);
-        if (bar != null) bar.removeAll();
-        stamina.remove(id);
-        waveMode.remove(id);
+        StaminaState state = players.remove(player.getUniqueId());
+        if (state == null) return;
+
+        cancelFade(state);
+        state.bar.removeAll();
+    }
+
+    /**
+     * Call from onDisable() (and ideally before any /reload) to clean up
+     * every active BossBar. Without this, a plugin reload while players
+     * are online leaks a BossBar per online player — PlayerQuitEvent never
+     * fires for them since they never actually quit.
+     */
+    public void shutdown() {
+        for (StaminaState state : players.values()) {
+            cancelFade(state);
+            state.bar.removeAll();
+        }
+        players.clear();
     }
 
     public double getStamina(Player player) {
-        return stamina.getOrDefault(player.getUniqueId(), MAX_STAMINA);
+        StaminaState state = players.get(player.getUniqueId());
+        return state != null ? state.value : MAX_STAMINA;
     }
 
     public boolean hasStamina(Player player, double required) {

@@ -47,8 +47,7 @@ import org.geysermc.floodgate.api.FloodgateApi;
 
 @SuppressWarnings("deprecation")
 public class DCM extends JavaPlugin implements Listener {
- 
-    private boolean debug = false;
+
  
     // ===========================
     // WEAPON CONFIGURATION
@@ -150,7 +149,7 @@ public class DCM extends JavaPlugin implements Listener {
     // OPTIONAL DEPENDENCY FLAGS
     // ===========================
     private boolean floodgateAvailable = false;
-    private boolean dvplus = false;
+    // private boolean dvplus = false;
     
     // ===========================
     // STAMINA MANAGER
@@ -158,10 +157,7 @@ public class DCM extends JavaPlugin implements Listener {
     private StaminaManager staminaManager;
    
 
-    // ===========================
-    // DEBUG HELPER METHOD
-    // ===========================
-
+   
 
     private void sendActionBar(Player player, ChatColor color, ChatColor style, String message) {
         player.sendActionBar(color + "" + style + message);
@@ -186,13 +182,13 @@ public class DCM extends JavaPlugin implements Listener {
 
         //This is for future integrations. DO NOT REMOVE!!!
         //Update, forgot what this is for LOLLLL 
-        if (getServer().getPluginManager().getPlugin("DVPlus") != null){
+       /*  if (getServer().getPluginManager().getPlugin("DVPlus") != null){
         dvplus = true;
         getLogger().info("Dams's Vanilla+ Detected!");
         } else {
             getLogger().warning("Dams's Vanilla+ Not found.");
-        }
-
+        }*/
+         //commented out until I remember what is it for,but for now TBR
 
         getServer().getPluginManager().registerEvents(this, this);
 
@@ -212,7 +208,6 @@ public class DCM extends JavaPlugin implements Listener {
 
         getLogger().info("-----------------------------------------------------------------------");
         getLogger().info("DCM (Dams's Combat Mechanics) v" + getDescription().getVersion() + " has been enabled!");
-        getLogger().info("DEBUG MODE: " + (debug ? "ENABLED" : "DISABLED"));
         getLogger().info("Have fun and Good Luck!");
         getLogger().info("-----------------------------------------------------------------------");
         
@@ -807,6 +802,7 @@ if (victim instanceof Player victimPlayer) {
         dashCooldowns.put(id, now + DASH_COOLDOWN_MS);
     }
 
+    
     private void startBlockingIndicator(Player player) {
         UUID playerId = player.getUniqueId();
         BukkitRunnable existing = blockingIndicatorTasks.remove(playerId);
